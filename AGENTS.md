@@ -1,7 +1,7 @@
-# projectData.monocle — Project memory and engineering guidance
+# projectData.monocle3 — Project memory and engineering guidance
 
 ## Purpose
-Build `projectData.monocle`, a separate R package that integrates disk-backed Monocle 3 `cell_data_set` (CDS) objects with `projectData`. Distribute initially through GitHub and R-universe. Keep the `projectData` core independent of Monocle and BPCells.
+Build `projectData.monocle3`, a separate R package that integrates disk-backed Monocle 3 `cell_data_set` (CDS) objects with `projectData`. Distribute initially through GitHub and R-universe. Keep the `projectData` core independent of Monocle and BPCells.
 
 ## Source of truth
 - Target core: `projectData` version `0.0.0.9005`; consult its current source before depending on undocumented internals.
@@ -10,10 +10,10 @@ Build `projectData.monocle`, a separate R package that integrates disk-backed Mo
 - Consult the installed versions/source of `monocle3` and `BPCells` before assuming arguments, serialization layout, or copying semantics.
 
 ## Settled architecture
-- Separate adapter package named `projectData.monocle` (working name).
-- Loader ID: `projectData.monocle::cds`; export `projectData_loaders()` to return a `projectData::data_loader()` or list thereof.
+- Separate adapter package named `projectData.monocle3` (the name of the repo, DESCRIPTION and GitHub remote; supersedes the earlier working name `projectData.monocle`).
+- Loader ID: `projectData.monocle3::cds`; export `projectData_loaders()` to return a `projectData::data_loader()` or list thereof.
 - Loader must use existing `data_loader(open, discover, validate, storage, needs_work_dir)` version-1 contract, with `storage = "disk-backed"` and `needs_work_dir = TRUE`.
-- Manifest (`inst/projectData/manifest.dcf`) identifies each CDS resource, its source under `extdata/`, object name, loader, and `AdapterPackage`/`AdapterExport`. Use source paths in the **installed** layout (`extdata/name`, not `inst/extdata/name`).
+- Manifest (`inst/projectData/manifest.dcf`) identifies each CDS resource, its source under `extdata/`, object name, loader, and `AdapterPackage: projectData.monocle3`/`AdapterExport: projectData_loaders`. Use source paths in the **installed** layout (`extdata/name`, not `inst/extdata/name`).
 - Require one CDS object per resource initially. Explicit manifest-backed discovery is sufficient for the first milestone.
 - Use Monocle's supported native persistence APIs (`save_monocle_objects()`/`load_monocle_objects()`), not `saveRDS()` as a substitute for a backed CDS.
 - Installed resource directories are immutable/read-only. Never `setwd()` or write to the user's working directory.
@@ -52,3 +52,19 @@ Build `projectData.monocle`, a separate R package that integrates disk-backed Mo
 - Check optional dependencies and error messages. The adapter package should not unexpectedly attach Monocle or projectData onto the user's search path.
 - Do not assert that disk-backed means RAM-free: just that matrix data can remain on disk.
 - Update README and this AGENTS.md when architecture decisions change; document remaining uncertainties explicitly.
+
+## Phase 1 status and verified findings (monocle3 1.4.27, BPCells 0.3.0, projectData 0.0.0.9005)
+
+Implemented: `projectData_loaders()` (exported), internal `validate_monocle_cds()` / `validate_file_index()` / `open_monocle_cds()` / `with_attached()` / `is_scalar_string()`. Tests: `tests/testthat/` (declaration, validate on synthetic dirs, end-to-end with real CDS in disposable installed libraries). `R CMD check` with `NOT_CRAN=true`: Status OK, 87 expectations, 0 skipped.
+
+- `monocle3` and `BPCells` are `Suggests` + `Remotes` (GitHub-only), checked with `requireNamespace()` in `open()` with an actionable message. `validate` needs neither.
+- `load_monocle_objects()` **copies** the BPCells dir; `matrix_path` must exist and monocle3 creates `monocle.bpcells.<date>.<id>.tmp` children (counts and a `_r` row-order copy). `paths$work_dir` is therefore passed directly as `matrix_path`, via `monocle3::set_matrix_control()` to fill required defaults (a partial `matrix_control` is rejected). Default `matrix_path` is `"."` (cwd), so it must always be set.
+- monocle3 unlinks those dirs at R exit via its own hook; the adapter does not delete anything.
+- `load_monocle_objects()` needs monocle3 (Depends) attached (`assay` is called unqualified). `with_attached()` attaches for the call and detaches only what it newly attached.
+- Validation requires `file_index.rds` (`save_function == "save_monocle_objects"`), exactly one rds CDS, exactly one `bpcells_matrix_dir`, relative contained paths, all files present. In-memory-counts saves and hdf5 saves are rejected (design choice: loader is declared disk-backed).
+- Saves must use `archive_control = list(archive_type = "none")`; the default makes a tar.
+- Independence: counts and row-order copy are in `work_dir`. The UMAP Annoy index is memory-mapped from the installed file (not copied); survives unlink on Linux (tested), not guaranteed elsewhere. `model_path` identity metadata records the install path but is informational.
+- No incompatibility with `projectData` found; no changes to it. Notes: a validate rejection happens before `on_open`; catalog `storage` reads `unknown` (loader_status `unresolved`) until the loader is registered; a failed `data_get(package=)` leaves the collection registered but unattached, so retry with `package=`.
+
+## Phase 2 TODO
+`save_monocle_cds()`, optional BPCells conversion, mandatory placeholder `.rda`, manifest writer, placeholder-vs-manifest precedence tests, alternative-assay round-trip tests, Windows/macOS verification, decision on persistent cache.

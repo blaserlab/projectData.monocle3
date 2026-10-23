@@ -1,3 +1,6 @@
 ^projectData\.monocle3\.Rproj$
 ^\.Rproj\.user$
 ^LICENSE\.md$
+^AGENTS\.md$
+^library_catalogs$
+^inst/data-raw$

@@ -1,12 +1,24 @@
 Package: projectData.monocle3
-Title: What the Package Does (One Line, Title Case)
-Version: 0.0.0.9000
+Title: 'projectData' Adapter for Disk-Backed 'monocle3' Cell Data Sets
+Version: 0.0.0.9001
 Authors@R: 
-    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"))
-Description: What the package does (one paragraph).
+    person("Brad", "Blaser", , "bradley.blaser@osumc.edu", role = c("aut", "cre", "cph"),
+           comment = c(ORCID = "0000-0002-3168-5423"))
+Description: A loader for the 'projectData' adapter framework. It restores
+    a saved 'monocle3' cell_data_set whose counts are a 'BPCells' on-disk
+    matrix from an installed data package, on first access, without attaching
+    'monocle3' or 'projectData' to the search path. Restored matrix files are
+    placed in the working directory allocated by 'projectData'.
 License: MIT + file LICENSE
+URL: https://github.com/blaserlab/projectData.monocle3
+BugReports: https://github.com/blaserlab/projectData.monocle3/issues
+Depends: R (>= 4.1.0)
+Imports: methods, projectData (>= 0.0.0.9005), stats
+Suggests: BPCells, Matrix, monocle3, SingleCellExperiment, SummarizedExperiment,
+    testthat (>= 3.2.0), withr (>= 2.5.0)
+Remotes: github::blaserlab/projectData, github::bnprks/BPCells/r,
+    github::cole-trapnell-lab/monocle3
+Config/testthat/edition: 3
 Config/roxygen2/version: 8.1.1
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-URL: https://github.com/blaserlab/projectData.monocle3
-BugReports: https://github.com/blaserlab/projectData.monocle3/issues
