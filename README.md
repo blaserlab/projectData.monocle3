@@ -8,8 +8,8 @@ It lets a data package ship a saved, disk-backed Monocle 3 `cell_data_set`
 (CDS) and have `projectData` restore it on first access, without attaching
 Monocle 3 or this package.
 
-Status: **phase 1, loading only.** Authoring helpers (`save_monocle_cds()`,
-placeholder `.rda` files, manifest writing) are not implemented yet.
+Status: **phase 1 (loading) plus manifest registration.** `save_monocle_cds()`
+and placeholder generation are not implemented yet.
 
 ## Installation
 
@@ -41,10 +41,12 @@ There is no `library(projectData.monocle3)`. The data package's manifest names
 the adapter, and `projectData` loads its namespace (without attaching it) on
 first access of an object that needs it.
 
-## Authoring a data package by hand (phase 1)
+## Authoring a data package
 
 Save a CDS whose counts are a BPCells on-disk matrix. Use `archive_type =
-"none"` so the directory itself ships, not a tar file:
+"none"` so the directory itself ships, not a tar file, and give the data
+package a matching `data/human_cds.rda` placeholder (the historical
+placeholder is the string `"This is a placeholder object."`):
 
 ``` r
 library(monocle3)
@@ -53,8 +55,32 @@ save_monocle_objects(cds, "inst/extdata/human_cds",
                      archive_control = list(archive_type = "none"))
 ```
 
-Then write `inst/projectData/manifest.dcf`. `Source` is the **installed**
-layout (`extdata/...`, not `inst/extdata/...`):
+Then register everything in `inst/projectData/manifest.dcf` with one call from
+the package source directory:
+
+``` r
+projectData.monocle3::write_monocle_manifest(
+  package_dir = "."
+)
+```
+
+This is a package-authoring step; installed packages never generate manifests.
+It finds each saved CDS directory under `inst/extdata/` that has a matching
+placeholder in `data/` (ordinary `.rda` datasets and other directories are
+ignored), and adds or updates its manifest entry. It reports what was added,
+updated, unchanged, skipped (for example a CDS with no placeholder, or a `.rda`
+that holds real data) or in conflict (a resource already assigned to another
+loader, which is left alone). Entries for other loaders are preserved, running
+it again changes nothing, and no CDS is loaded or BPCells file created. See
+`?write_monocle_manifest` for details.
+
+The future `save_monocle_cds()` will save the CDS, create the placeholder and
+invoke this same registration logic automatically.
+
+### The manifest it writes
+
+The result is the same file you could write by hand. `Source` is the
+**installed** layout (`extdata/...`, not `inst/extdata/...`):
 
 ```
 ManifestVersion: 1
@@ -69,8 +95,10 @@ RecordedClass: cell_data_set
 HelpTopic: human_cds
 ```
 
-Each resource must declare exactly one object. Add `projectData.monocle3` to
-the data package's `Suggests` (and `Remotes`).
+(`AdapterExport: projectData_loaders` is the default, so the generated file
+omits that line; it means the same.) Each resource must declare exactly one
+object. Add `projectData.monocle3` to the data package's `Suggests` (and
+`Remotes`).
 
 ## What the loader does
 
@@ -128,4 +156,7 @@ devtools::test()   # integration tests need monocle3, BPCells, SingleCellExperim
 ```
 
 Tests build two small real CDS fixtures in a subprocess (about 20 seconds)
-and install them into throwaway libraries.
+and install them into throwaway libraries. The end-to-end manifest test copies
+the source of `projectData.monocle3.testdata` (found through the
+`PDM3_TESTDATA_SOURCE` environment variable, or as a sibling directory of this
+package) and skips if it is unavailable.

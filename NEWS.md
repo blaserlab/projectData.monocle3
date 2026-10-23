@@ -1,3 +1,20 @@
+# projectData.monocle3 0.0.0.9003
+
+* New exported `write_monocle_manifest(package_dir = ".")` for data-package
+  authors. It discovers saved Monocle CDS directories under `inst/extdata/`,
+  pairs each with a `data/<name>.rda` placeholder, and creates or updates
+  `inst/projectData/manifest.dcf` through `projectData::data_manifest_write()`.
+  Existing entries of other loaders are preserved, conflicts are reported and
+  left unchanged, an unchanged manifest is not rewritten, and nothing is
+  loaded during discovery.
+* Placeholders are verified by parsing the `.rda` serialization header, without
+  evaluating anything. The legacy string `"This is a placeholder object."` is
+  recognized; further representations can be added as recognizers.
+* Added unit tests (synthetic and real fixtures) and an end-to-end test that
+  regenerates the manifest of a disposable copy of
+  `projectData.monocle3.testdata`, installs it and opens a CDS through
+  `projectData`. No loader changes.
+
 # projectData.monocle3 0.0.0.9002
 
 * Added integration tests against the installed `projectData.monocle3.testdata`

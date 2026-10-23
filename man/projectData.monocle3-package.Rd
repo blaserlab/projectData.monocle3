@@ -6,7 +6,7 @@
 \alias{projectData.monocle3-package}
 \title{projectData.monocle3: 'projectData' Adapter for Disk-Backed 'monocle3' Cell Data Sets}
 \description{
-A loader for the 'projectData' adapter framework. It restores a saved 'monocle3' cell_data_set whose counts are a 'BPCells' on-disk matrix from an installed data package, on first access, without attaching 'monocle3' or 'projectData' to the search path. Restored matrix files are placed in the working directory allocated by 'projectData'.
+A loader for the 'projectData' adapter framework. It restores a saved 'monocle3' cell_data_set whose counts are a 'BPCells' on-disk matrix from an installed data package, on first access, without attaching 'monocle3' or 'projectData' to the search path. Restored matrix files are placed in the working directory allocated by 'projectData'. For data package authors, it also registers saved CDS directories in the package's 'projectData' manifest.
 }
 \seealso{
 Useful links:
