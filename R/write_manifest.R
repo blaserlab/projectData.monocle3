@@ -98,26 +98,40 @@ write_monocle_manifest <- function(package_dir = ".") {
   manifest <- file.path(root, "inst", "projectData", "manifest.dcf")
   found <- discover_monocle_resources(root)
 
-  # Registered so the loader's own validation also runs on every entry;
-  # removed again only if this call added it.
+  loader_id <- projectData_loaders()$id
+  plan <- with_loader_registered({
+    existing <- read_existing_manifest(manifest, root)
+    plan <- plan_manifest(existing, found, loader_id)
+    changed <- write_planned_manifest(plan, manifest, root)
+    plan
+  })
+  report <- plan$report
+  report_manifest_changes(report, manifest, changed)
+  invisible(structure(report, manifest = manifest, written = changed))
+}
+
+# Evaluates `expr` with this package's loader registered, so that projectData's
+# manifest validation also runs the loader's `validate`. The loader is removed
+# afterwards only if this call added it.
+with_loader_registered <- function(expr) {
   loader_id <- projectData_loaders()$id
   if (!loader_id %in% projectData::data_loaders()$id) {
     projectData::data_loader_add(projectData_loaders())
     on.exit(try(projectData::data_loader_remove(loader_id), silent = TRUE), add = TRUE)
   }
+  expr
+}
 
-  existing <- read_existing_manifest(manifest, root)
-  plan <- plan_manifest(existing, found, loader_id)
-  report <- plan$report
-
-  changed <- any(report$status %in% c("added", "updated"))
+# Writes the planned descriptors only when something was added or updated.
+# Needs the loader registered and the sources present under `root`.
+write_planned_manifest <- function(plan, manifest, root) {
+  changed <- any(plan$report$status %in% c("added", "updated"))
   if (changed) {
     projectData::data_manifest_write(
       plan$descriptors, manifest, root = root, overwrite = file.exists(manifest)
     )
   }
-  report_manifest_changes(report, manifest, changed)
-  invisible(structure(report, manifest = manifest, written = changed))
+  changed
 }
 
 read_existing_manifest <- function(manifest, root) {

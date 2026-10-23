@@ -1,6 +1,6 @@
 Package: projectData.monocle3
 Title: 'projectData' Adapter for Disk-Backed 'monocle3' Cell Data Sets
-Version: 0.0.0.9003
+Version: 0.0.0.9004
 Authors@R: 
     person("Brad", "Blaser", , "bradley.blaser@osumc.edu", role = c("aut", "cre", "cph"),
            comment = c(ORCID = "0000-0002-3168-5423"))
@@ -15,7 +15,7 @@ License: MIT + file LICENSE
 URL: https://github.com/blaserlab/projectData.monocle3
 BugReports: https://github.com/blaserlab/projectData.monocle3/issues
 Depends: R (>= 4.1.0)
-Imports: methods, projectData (>= 0.0.0.9005), stats
+Imports: methods, projectData (>= 0.0.0.9005), stats, utils
 Suggests: BPCells, Matrix, monocle3, SingleCellExperiment, SummarizedExperiment,
     testthat (>= 3.2.0), withr (>= 2.5.0)
 Remotes: github::blaserlab/projectData, github::bnprks/BPCells/r,

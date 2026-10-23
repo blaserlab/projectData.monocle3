@@ -43,20 +43,92 @@ first access of an object that needs it.
 
 ## Authoring a data package
 
-Save a CDS whose counts are a BPCells on-disk matrix. Use `archive_type =
-"none"` so the directory itself ships, not a tar file, and give the data
-package a matching `data/human_cds.rda` placeholder (the historical
-placeholder is the string `"This is a placeholder object."`):
+From the root of the data package source directory, one call saves the CDS,
+writes the placeholder and registers the resource:
 
 ``` r
-library(monocle3)
-cds <- convert_counts_matrix(cds, matrix_control = list(matrix_class = "BPCells"))
-save_monocle_objects(cds, "inst/extdata/human_cds",
-                     archive_control = list(archive_type = "none"))
+projectData.monocle3::save_monocle_cds(
+  cds_main_adults,                  # a monocle3 cell_data_set
+  name = "cds_main_adults",
+  package_dir = ".",
+  convert_to_bpcells = FALSE,       # TRUE converts in-memory counts first
+  overwrite = FALSE
+)
 ```
 
-Then register everything in `inst/projectData/manifest.dcf` with one call from
-the package source directory:
+This creates
+
+```
+data/cds_main_adults.rda                 placeholder (one classed character vector)
+inst/extdata/cds_main_adults/            native monocle3::save_monocle_objects() directory
+inst/projectData/manifest.dcf            entry added or updated
+```
+
+Then document the dataset the usual way in `R/data.R` (the function never edits
+that file, and tells you if no topic is found), keep the generating script in
+`inst/data-raw/` if you like, and rebuild the package:
+
+``` r
+#' Example disk-backed Monocle dataset
+#'
+#' A synthetic single-cell dataset.
+#'
+#' @format A Monocle 3 cell_data_set with BPCells-backed counts.
+#' @details Access using projectData::data_attach().
+"cds_main_adults"
+```
+
+``` r
+devtools::document()
+devtools::install()
+```
+
+Add `projectData.monocle3` to the data package's `Suggests` (and `Remotes`).
+
+Points to know:
+
+* The counts must be a BPCells on-disk matrix. In-memory counts are rejected
+  before anything is written, unless `convert_to_bpcells = TRUE`, which
+  converts a *copy* with `monocle3::convert_counts_matrix()` (only `counts`;
+  the intermediate matrix goes to a session temporary directory). Counts that
+  are already BPCells-backed are saved as they are.
+* An existing dataset or placeholder is replaced only with `overwrite = TRUE`,
+  and a `data/<name>.rda` that holds anything other than a placeholder is never
+  replaced. Files are built in a hidden staging directory
+  (`.projectData.monocle3-stage-*`), checked with the loader's own validation, and
+  only then moved into place; if that fails the previous files are restored. It
+  is not a filesystem transaction (a crash can leave the staging directory
+  behind).
+* Alternative assays: in-memory ones are kept and tested to survive. An
+  alternative assay that is itself a BPCells matrix is saved by Monocle only as
+  a reference to its original directory; the function warns, and that case is
+  unsupported.
+* The caller's CDS is never modified, and nothing is written to the working
+  directory.
+
+### What users of the package see
+
+``` r
+data("cds_main_adults", package = "myDataPackage")
+```
+
+only loads the **placeholder**, a named character vector that prints its own
+instructions with base R (no `projectData` needed): it is not the CDS, remove it
+with `rm(cds_main_adults)`, then attach the package. If it masks the real
+object, remove it and use:
+
+``` r
+projectData::data_attach("myDataPackage")
+cds_main_adults    # resolved by the adapter, opened on first access
+```
+
+### Registering directories saved by other means
+
+If you saved a CDS yourself (`save_monocle_objects(cds, "inst/extdata/human_cds",
+archive_control = list(archive_type = "none"))`, counts BPCells-backed) and
+created a matching `data/human_cds.rda` placeholder (a classed placeholder from
+`save_monocle_cds()` or the historical string `"This is a placeholder
+object."`), register it from the package source directory with:
 
 ``` r
 projectData.monocle3::write_monocle_manifest(
@@ -72,10 +144,8 @@ updated, unchanged, skipped (for example a CDS with no placeholder, or a `.rda`
 that holds real data) or in conflict (a resource already assigned to another
 loader, which is left alone). Entries for other loaders are preserved, running
 it again changes nothing, and no CDS is loaded or BPCells file created. See
-`?write_monocle_manifest` for details.
-
-The future `save_monocle_cds()` will save the CDS, create the placeholder and
-invoke this same registration logic automatically.
+`?write_monocle_manifest` for details. `save_monocle_cds()` uses the same
+registration logic.
 
 ### The manifest it writes
 

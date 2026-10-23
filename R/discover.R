@@ -168,6 +168,18 @@ placeholder_recognizers <- function() {
         length(info$value) == 1L &&
         identical(info$value, legacy_placeholder_text) &&
         !length(info$attributes)
+    },
+    # Written by save_monocle_cds(): a named character vector of instructions
+    # that carries its class, object name and package as attributes.
+    classed = function(info, name) {
+      attrs <- info$attributes
+      isTRUE(info$single) &&
+        identical(info$kind, "character") &&
+        length(info$value) >= 1L &&
+        identical(attrs$class, placeholder_class) &&
+        identical(attrs$object_name, name) &&
+        length(attrs$package) == 1L && !is.na(attrs$package) &&
+        length(attrs$names) == length(info$value)
     }
   )
 }

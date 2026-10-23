@@ -1,3 +1,27 @@
+# projectData.monocle3 0.0.0.9004
+
+* New exported `save_monocle_cds(cds, name, package_dir, convert_to_bpcells,
+  overwrite)`. One call validates the inputs, saves the CDS with
+  `monocle3::save_monocle_objects()` (no archive) under `inst/extdata/<name>/`,
+  writes the mandatory `data/<name>.rda` placeholder and registers the
+  resource in `inst/projectData/manifest.dcf` using the same planning and
+  writing code as `write_monocle_manifest()`.
+* Placeholder: a named character vector of instructions (one per element),
+  class `projectData_monocle3_placeholder`, attributes `object_name` and
+  `package`; legible with base R printing alone. Discovery recognizes it in
+  addition to the legacy string.
+* Files are staged in a hidden directory, verified with the loader's
+  validation, then moved into place with the previous files kept aside; failures
+  restore them. Existing targets need `overwrite = TRUE`, and real datasets or
+  foreign directories are never replaced.
+* Optional `convert_to_bpcells = TRUE` converts `counts` of a copy with
+  `monocle3::convert_counts_matrix()` into a session temporary directory.
+  In-memory counts without conversion are rejected before writing.
+* On-disk (BPCells) alternative assays raise a
+  `projectData.monocle3_external_assay` warning; in-memory ones are preserved.
+* Internal: `with_loader_registered()` and `write_planned_manifest()` factored
+  out of `write_monocle_manifest()`. No loader changes.
+
 # projectData.monocle3 0.0.0.9003
 
 * New exported `write_monocle_manifest(package_dir = ".")` for data-package
