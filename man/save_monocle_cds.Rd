@@ -93,10 +93,25 @@ In-memory alternative assays are stored in \code{cds_object.rds} and have been
 verified to survive a save and a load through the adapter. An alternative
 assay that is itself a BPCells matrix is \strong{not} supported: Monocle saves
 only a reference to its original directory, which will not exist for the
-people using the package. A warning of class
-\code{projectData.monocle3_external_assay} is raised and the data package is
-written regardless; what a loaded copy contains for such assays is unverified.
-Other representations (for example \code{DelayedArray} assays) were not tested.
+people using the package. Saving is therefore \strong{refused} with an error of
+class \code{projectData.monocle3_external_assay} (also
+\code{projectData.monocle3_save_error}) before anything is written. The error lists
+every offending assay with its location, such as \verb{assay 'spliced'} or
+\verb{altExp 'ADT' / altExp 'normalized' / assay 'counts'}. Convert such assays to
+an in-memory matrix, or remove them, before saving; this function never
+converts them because that could use a lot of memory.
+
+The check is recursive: the assays of every alternative experiment
+(\code{SingleCellExperiment::altExp()}), at any depth, are inspected, and unlike
+at the top level there is no exception for \code{counts} or \code{counts_row_order}
+there. An alternative experiment with in-memory assays is supported. No matrix
+values are read; BPCells matrices are judged by the classes of the matrices
+underneath, and only \code{MatrixMem} (in-memory) ones are accepted; a BPCells wrapper
+around an R matrix (\code{Iterable_dgCMatrix_wrapper}) is refused too, as it is not
+known to be self-contained. \code{DelayedArray} assays are
+also refused, because whether they are file-backed is not examined and their
+serialization is untested. Other exotic representations are not checked and
+are not guaranteed to work.
 }
 
 \section{Overwriting and failure}{

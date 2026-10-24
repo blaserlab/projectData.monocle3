@@ -1,6 +1,6 @@
 Package: projectData.monocle3
 Title: 'projectData' Adapter for Disk-Backed 'monocle3' Cell Data Sets
-Version: 0.0.0.9006
+Version: 0.0.0.9007
 Authors@R: 
     person("Brad", "Blaser", , "bradley.blaser@osumc.edu", role = c("aut", "cre", "cph"),
            comment = c(ORCID = "0000-0002-3168-5423"))

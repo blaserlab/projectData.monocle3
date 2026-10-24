@@ -63,10 +63,25 @@
 #' verified to survive a save and a load through the adapter. An alternative
 #' assay that is itself a BPCells matrix is **not** supported: Monocle saves
 #' only a reference to its original directory, which will not exist for the
-#' people using the package. A warning of class
-#' `projectData.monocle3_external_assay` is raised and the data package is
-#' written regardless; what a loaded copy contains for such assays is unverified.
-#' Other representations (for example `DelayedArray` assays) were not tested.
+#' people using the package. Saving is therefore **refused** with an error of
+#' class `projectData.monocle3_external_assay` (also
+#' `projectData.monocle3_save_error`) before anything is written. The error lists
+#' every offending assay with its location, such as `assay 'spliced'` or
+#' `altExp 'ADT' / altExp 'normalized' / assay 'counts'`. Convert such assays to
+#' an in-memory matrix, or remove them, before saving; this function never
+#' converts them because that could use a lot of memory.
+#'
+#' The check is recursive: the assays of every alternative experiment
+#' (`SingleCellExperiment::altExp()`), at any depth, are inspected, and unlike
+#' at the top level there is no exception for `counts` or `counts_row_order`
+#' there. An alternative experiment with in-memory assays is supported. No matrix
+#' values are read; BPCells matrices are judged by the classes of the matrices
+#' underneath, and only `MatrixMem` (in-memory) ones are accepted; a BPCells wrapper
+#' around an R matrix (`Iterable_dgCMatrix_wrapper`) is refused too, as it is not
+#' known to be self-contained. `DelayedArray` assays are
+#' also refused, because whether they are file-backed is not examined and their
+#' serialization is untested. Other exotic representations are not checked and
+#' are not guaranteed to work.
 #'
 #' @section Overwriting and failure:
 #' Before anything is written, the CDS, `name`, `package_dir`, installed
@@ -199,15 +214,8 @@ save_monocle_cds <- function(cds, name, package_dir = ".", overwrite = FALSE) {
   )
 
   external <- external_assays(cds)
-  if (length(external)) {
-    warning(structure(
-      class = c("projectData.monocle3_external_assay", "warning", "condition"),
-      list(message = paste0(
-        "Alternative assay(s) ", paste0("'", external, "'", collapse = ", "),
-        " are on-disk BPCells matrices. Monocle saves only a reference to their ",
-        "original directory, so they will not work in the installed package."),
-        call = call)
-    ))
+  if (nrow(external)) {
+    fail(external_assay_message(name, external), class = "projectData.monocle3_external_assay")
   }
 
   # 2. Stage, verify, then commit ---------------------------------------
@@ -311,13 +319,73 @@ check_save_targets <- function(root, name, overwrite, fail) {
        replaced = has_cds || length(candidates) > 0L)
 }
 
-# Assays other than counts (and the derived counts_row_order) that Monocle
-# would store only by reference.
+# Finds assays whose matrix lives outside the object and that Monocle's
+# serialization would store only by reference, so a data package would ship a
+# dangling path. Returns a data frame with one row per offending assay and a
+# human-readable `location`, e.g. "altExp 'ADT' / altExp 'norm' / assay 'counts'".
+#
+# At the top level, `counts` (validated by counts_representation()) and the
+# derived `counts_row_order` are exempt. Nested assays have no exemption, and
+# no values are read: only the class of each assay and, for BPCells matrices,
+# the classes of the matrices underneath are inspected.
 external_assays <- function(cds) {
-  others <- setdiff(SummarizedExperiment::assayNames(cds), c("counts", "counts_row_order"))
-  others[vapply(others, function(a) {
-    methods::is(SummarizedExperiment::assay(cds, a, withDimnames = FALSE), "IterableMatrix")
-  }, NA)]
+  found <- list()
+  walk <- function(x, path, top) {
+    for (a in SummarizedExperiment::assayNames(x)) {
+      if (top && a %in% c("counts", "counts_row_order")) next
+      m <- SummarizedExperiment::assay(x, a, withDimnames = FALSE)
+      kind <- disk_backing(m)
+      if (!is.na(kind)) {
+        found[[length(found) + 1L]] <<- data.frame(
+          location = paste(c(path, paste0("assay '", a, "'")), collapse = " / "),
+          assay = a, class = class(m)[1L], backing = kind, stringsAsFactors = FALSE
+        )
+      }
+    }
+    if (methods::is(x, "SingleCellExperiment")) {
+      alts <- SingleCellExperiment::altExps(x, withDimnames = FALSE)
+      for (nm in names(alts)) {
+        walk(alts[[nm]], c(path, paste0("altExp '", nm, "'")), FALSE)
+      }
+    }
+  }
+  walk(cds, character(), TRUE)
+  if (!length(found)) {
+    return(data.frame(location = character(), assay = character(), class = character(),
+                      backing = character(), stringsAsFactors = FALSE))
+  }
+  do.call(rbind, found)
+}
+
+# NA for matrices held in memory; otherwise a short description of the
+# external storage. BPCells operation chains are judged by their leaves, not by
+# their (varying) outer class: only in-memory leaves are acceptable.
+disk_backing <- function(m) {
+  if (methods::is(m, "IterableMatrix")) {
+    leaves <- vapply(BPCells::all_matrix_inputs(m), function(l) class(l)[1L], "")
+    disk <- leaves[!grepl("MatrixMem", leaves)]
+    return(if (length(disk)) paste0("BPCells ", paste(unique(disk), collapse = ", ")) else NA_character_)
+  }
+  if (methods::is(m, "DelayedArray")) {
+    # Delayed operations may sit on in-memory or file-backed seeds; both are
+    # treated as external because Monocle's handling of them is untested.
+    return("DelayedArray")
+  }
+  NA_character_
+}
+
+external_assay_message <- function(name, external) {
+  paste0(
+    "Cannot save CDS '", name, "':\n\n",
+    "The following assay(s) are disk-backed (or are BPCells/delayed representations not ",
+    "known to be in memory) and may reference external files that are not preserved by ",
+    "Monocle's native serialization, so the saved data package would not be portable:\n",
+    paste0("  - ", external$location, " (", external$class, ": ", external$backing, ")",
+           collapse = "\n"),
+    "\n\nOnly Monocle-managed BPCells counts of the main CDS are currently supported as ",
+    "disk-backed storage. Convert each of these assays to an in-memory representation ",
+    "before saving, or remove it if appropriate. Nothing was written."
+  )
 }
 
 # Converts the counts of a separate copy using monocle3's own conversion. The

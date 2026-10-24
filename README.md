@@ -8,8 +8,22 @@ It lets a data package ship a saved, disk-backed Monocle 3 `cell_data_set`
 (CDS) and have `projectData` restore it on first access, without attaching
 Monocle 3 or this package.
 
-Status: **phase 1 (loading) plus manifest registration.** `save_monocle_cds()`
-and placeholder generation are not implemented yet.
+Current functionality:
+
+* `save_monocle_cds()` saves a CDS into a data package source tree, converting
+  in-memory counts to BPCells automatically and keeping counts that are already
+  BPCells-backed as they are.
+* A mandatory, informational `.rda` placeholder is written for every saved CDS,
+  so `data()` and roxygen documentation behave conventionally.
+* The `projectData` manifest is generated and reconciled automatically.
+* The CDS is loaded lazily, on first access, through `projectData::data_attach()`;
+  restored BPCells files go to the working directory managed by `projectData`
+  (session-temporary by default; no persistent cache).
+* In-memory additional assays and alternative experiments are preserved.
+* **Limitation:** assays that are independently disk-backed (BPCells or
+  delayed), in the main CDS or inside any alternative experiment, are rejected
+  at save time because Monocle would store only a reference to files that are
+  not part of the data package.
 
 ## Installation
 
@@ -43,7 +57,27 @@ first access of an object that needs it.
 
 ## Authoring a data package
 
-From the root of the data package source directory, one call saves the CDS,
+Minimal workflow:
+
+``` r
+projectData.monocle3::save_monocle_cds(
+  cds,
+  name = "example_cds",
+  package_dir = "."
+)
+```
+
+then, after documenting the dataset and installing the package:
+
+``` r
+projectData::data_attach("myDataPackage")
+example_cds
+```
+
+Ordinary `data("example_cds")` retrieves only an informational placeholder, not
+the CDS.
+
+In more detail: from the root of the data package source directory, one call saves the CDS,
 writes the placeholder and registers the resource:
 
 ``` r
@@ -96,10 +130,10 @@ Points to know:
   is an error raised before anything is written. Monocle adds its internal
   `counts_row_order` assay to a converted copy; it is derived from the counts
   and is not a separate assay.
-* Extra assays (for example `logcounts`, `spliced`) and alternative experiments
-  (`SingleCellExperiment::altExp()`, e.g. ADT and CRISPR) are stored with the
-  CDS and are tested to survive a save and a load for synthetic data; other
-  extensions are not assumed to be supported.
+* Extra in-memory assays (for example `logcounts`, `spliced`) and alternative
+  experiments (`SingleCellExperiment::altExp()`, e.g. ADT and CRISPR) are stored
+  with the CDS and are tested to survive a save and a load for synthetic data;
+  other extensions are not assumed to be supported.
 * The manifest is reconciled with the package on every save (see below):
   entries whose saved directory or placeholder was deleted are removed.
 * An existing dataset or placeholder is replaced only with `overwrite = TRUE`,
@@ -109,10 +143,18 @@ Points to know:
   only then moved into place; if that fails the previous files are restored. It
   is not a filesystem transaction (a crash can leave the staging directory
   behind).
-* Alternative assays: in-memory ones are kept and tested to survive. An
-  alternative assay that is itself a BPCells matrix is saved by Monocle only as
-  a reference to its original directory; the function warns, and that case is
-  unsupported.
+* Independently disk-backed assays are **rejected**, with an error raised before
+  anything is written. Monocle saves such an assay (for example a BPCells
+  `spliced` matrix, or the `counts` of an ADT alternative experiment) only as a
+  reference to its original directory, which does not exist for the users of the
+  package. All alternative experiments are inspected, at any nesting depth, and
+  the error lists each offender with its location, such as
+  `altExp 'ADT' / altExp 'normalized' / assay 'counts'`. Only the main CDS's
+  Monocle-managed `counts` (and the derived `counts_row_order`) may be on disk.
+  Convert the offending assays to in-memory matrices, or drop them; the package
+  never does this automatically because it could need a lot of memory.
+  `DelayedArray` assays and BPCells wrappers not known to be in memory are also
+  refused; other exotic matrix classes are not checked.
 * The caller's CDS is never modified, and nothing is written to the working
   directory.
 
@@ -243,8 +285,8 @@ installed package in place while a CDS from it is in use, and on Windows the
 installation cannot be removed while the index is mapped. The CDS also records
 the original install path as model-identity metadata; nothing reads it.
 PCA/other reduction models stored in the CDS object itself are in memory.
-Only the default (`"counts"`) assay is verified. Other assays are not
-tested yet.
+The default (`"counts"`) assay is the one that is loaded from disk. Other
+in-memory assays and alternative experiments are tested with synthetic data.
 
 ## Development
 

@@ -355,26 +355,6 @@ test_that("an in-memory alternative assay survives, and is not converted", {
   expect_equal(unname(as.matrix(SummarizedExperiment::assay(conv, "alt_mem"))), unname(as.matrix(alt)))
 })
 
-test_that("an on-disk alternative assay raises a warning and is documented as unsupported", {
-  skip_if_no_monocle()
-  pkg <- new_save_pkg()
-  cds <- fixture_bpcells_cds()
-  alt_dir <- withr::local_tempdir()
-  alt <- BPCells::write_matrix_dir(
-    as(as(Matrix::Matrix(cds_fixtures()$human$expected$counts, sparse = TRUE), "dgCMatrix"),
-       "IterableMatrix"),
-    file.path(alt_dir, "alt")
-  )
-  SummarizedExperiment::assay(cds, "alt_bp") <- alt
-
-  out <- save_quiet(cds, "ds", pkg)
-  classes <- unlist(lapply(out$warnings, class))
-  expect_true("projectData.monocle3_external_assay" %in% classes)
-  expect_match(conditionMessage(out$warnings[[1]]), "alt_bp", fixed = TRUE)
-  # The package is still written; whether the reference works is what is unverified.
-  expect_true(file.exists(file.path(pkg, "data", "ds.rda")))
-})
-
 test_that("a reminder is printed when no documentation topic exists", {
   skip_if_no_monocle()
   pkg <- new_save_pkg()

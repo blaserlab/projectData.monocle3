@@ -1,3 +1,14 @@
+# projectData.monocle3 0.0.0.9007
+
+* `save_monocle_cds()` now **errors** (class `projectData.monocle3_external_assay`,
+  before anything is written) when a secondary assay is independently
+  disk-backed, instead of warning and saving a data package with dangling
+  references. Alternative experiments are inspected recursively; the error names
+  each location (e.g. `altExp 'ADT' / altExp 'normalized' / assay 'counts'`).
+  Monocle-managed `counts` and `counts_row_order` of the main CDS and all
+  in-memory assays are unaffected. No signature, loader or manifest changes.
+* README brought up to date; new regression tests in `test-save-external-assays.R`.
+
 # projectData.monocle3 0.0.0.9005
 
 * `write_monocle_manifest()` now reconciles the manifest with the package. Entries
