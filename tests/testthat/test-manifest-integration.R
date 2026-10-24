@@ -52,19 +52,21 @@ test_that("B: the CDS resources resolve from the manifest through the adapter, n
   origin <- stats::setNames(cat$origin, cat$object)
   expect_identical(origin[["cds_bpcells_a"]], "manifest")
   expect_identical(origin[["cds_bpcells_b"]], "manifest")
+  expect_identical(origin[["cds_multiassay"]], "manifest")
   expect_identical(origin[["ordinary_data"]], "index")
 
   loader <- stats::setNames(cat$loader, cat$object)
   expect_identical(loader[["cds_bpcells_a"]], "projectData.monocle3::cds")
   expect_identical(loader[["cds_bpcells_b"]], "projectData.monocle3::cds")
+  expect_identical(loader[["cds_multiassay"]], "projectData.monocle3::cds")
   expect_identical(loader[["ordinary_data"]], "projectData::dataset")
   expect_identical(
     stats::setNames(cat$source, cat$object)[testdata_cds],
-    c(cds_bpcells_a = "extdata/cds_bpcells_a", cds_bpcells_b = "extdata/cds_bpcells_b")
+    stats::setNames(paste0("extdata/", testdata_cds), testdata_cds)
   )
   expect_identical(
     stats::setNames(cat$recorded_class, cat$object)[testdata_cds],
-    c(cds_bpcells_a = "cell_data_set", cds_bpcells_b = "cell_data_set")
+    stats::setNames(rep("cell_data_set", 3), testdata_cds)
   )
 })
 
@@ -101,4 +103,36 @@ test_that("H: ordinary_data still loads through the standard dataset loader", {
   env <- new.env()
   utils::data("ordinary_data", package = testdata_pkg, envir = env)
   expect_identical(get("ordinary_data", envir = env), expected)
+})
+
+test_that("I: cds_multiassay keeps its extra assays and alternative experiments through the adapter", {
+  local_testdata_session()
+
+  cds <- projectData::data_get("cds_multiassay", package = testdata_pkg)
+
+  expect_s4_class(cds, "cell_data_set")
+  expect_identical(dim(cds), testdata_dims$cds_multiassay)
+  expect_s4_class(SummarizedExperiment::assay(cds, "counts"), "MatrixDir")
+  assays <- SummarizedExperiment::assayNames(cds)
+  expect_true(all(c("counts", "logcounts", "spliced") %in% assays))
+  expect_setequal(SingleCellExperiment::altExpNames(cds), c("ADT", "CRISPR"))
+
+  counts <- dense_block(SummarizedExperiment::assay(cds, "counts"), 1:10, 1:10)
+  for (nm in c("logcounts", "spliced")) {
+    a <- SummarizedExperiment::assay(cds, nm)
+    expect_identical(dim(a), dim(cds))
+    expect_identical(dimnames(a), dimnames(cds))
+    expect_true(all(is.finite(as.matrix(a[1:10, 1:10]))))
+  }
+  if ("counts_row_order" %in% assays) {
+    expect_equal(dense_block(SummarizedExperiment::assay(cds, "counts_row_order"), 1:10, 1:10),
+                 counts)
+  }
+  for (nm in SingleCellExperiment::altExpNames(cds)) {
+    alt <- SingleCellExperiment::altExp(cds, nm)
+    expect_identical(colnames(alt), colnames(cds))
+    expect_gt(nrow(alt), 0L)
+    expect_gt(length(SummarizedExperiment::assayNames(alt)), 0L)
+    expect_equal(nrow(SummarizedExperiment::rowData(alt)), nrow(alt))
+  }
 })

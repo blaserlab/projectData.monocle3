@@ -22,31 +22,39 @@
 #' @section Serialization:
 #' The CDS is written with `monocle3::save_monocle_objects()` using
 #' `archive_control = list(archive_type = "none")` (no tar archive), so the
-#' directory is installed as is. The counts must be a BPCells on-disk matrix,
-#' because that is what the loader restores; `save_monocle_objects()` copies the
-#' matrix directory into the saved directory. Everything else, including
-#' metadata, reductions, their nearest-neighbour indexes and any in-memory
-#' alternative assays, is stored in `cds_object.rds` and the index files that
-#' Monocle writes.
-#'
-#' `save_monocle_objects()` converts nothing by itself, with two exceptions
-#' worth knowing: it writes the CDS as HDF5 instead of rds if any assay is
-#' HDF5-backed (such a save is rejected here because the loader does not
-#' support it), and a CDS with in-memory counts is saved *without* a BPCells
-#' directory (rejected here as well, with advice to use
-#' `convert_to_bpcells = TRUE`).
+#' directory is installed as is. The loader restores BPCells on-disk counts, so
+#' the counts of the saved CDS always are such a matrix;
+#' `save_monocle_objects()` copies the matrix directory into the saved
+#' directory. Everything else, including metadata, reductions, their
+#' nearest-neighbour indexes and any in-memory alternative assays and
+#' alternative experiments, is stored in `cds_object.rds` and the index files
+#' that Monocle writes.
 #'
 #' @section BPCells conversion:
-#' With `convert_to_bpcells = FALSE` (the default) no assay is converted and
-#' the CDS is saved as it is; counts that are already BPCells-backed pass
-#' through unchanged, and in-memory counts are an error raised before anything is
-#' written. With `convert_to_bpcells = TRUE` a *separate* copy of the CDS gets
-#' its `counts` assay converted with `monocle3::convert_counts_matrix()`
-#' (`matrix_class = "BPCells"`, `matrix_mode = "dir"`), writing the intermediate
-#' matrix to a temporary directory of the session (never the working
-#' directory), which is removed once the CDS is saved. Only `counts` is
-#' converted; other assays are left alone. Cell and feature names must be
-#' unchanged by the conversion, which is checked.
+#' Conversion is automatic; there is nothing to switch on. The `counts` assay is
+#' inspected first (with `methods::is()` against BPCells' `IterableMatrix` class
+#' and `BPCells::all_matrix_inputs()` to find the matrices underneath):
+#'
+#' * **Counts that are already an on-disk BPCells matrix** (a `MatrixDir`,
+#'   possibly lazily subset or transformed) are *not* converted again. They are
+#'   saved as they are.
+#' * **In-memory counts** (a `dgCMatrix` or `dgTMatrix`, or a BPCells matrix held
+#'   in memory) are converted on a *separate working copy* of the CDS with
+#'   `monocle3::convert_counts_matrix()` (`matrix_class = "BPCells"`,
+#'   `matrix_mode = "dir"`). The intermediate matrix goes to a temporary
+#'   directory of the session (never the working directory) that is removed once
+#'   the CDS is saved, and the caller's `cds` is not modified. Cell and feature
+#'   names must be unchanged by the conversion, which is checked. Monocle
+#'   adds its internal, derived `counts_row_order` assay to the converted copy;
+#'   it is a row-oriented copy of the counts, not a separate assay, and is
+#'   regenerated whenever the CDS is loaded.
+#' * **Any other representation** (for example a dense `matrix`, a
+#'   `DelayedMatrix` or an HDF5-backed BPCells matrix) is an error raised before
+#'   anything is written, naming the class found.
+#'
+#' Only `counts` is converted; other assays are left alone. `save_monocle_objects()`
+#' itself writes the CDS as HDF5 instead of rds if any assay is HDF5-backed
+#' (such a save is rejected here because the loader does not support it).
 #'
 #' @section Alternative assays:
 #' Assays other than `counts` (and the derived `counts_row_order`, which
@@ -69,6 +77,17 @@
 #' `data/<name>.rda` that holds anything else is never replaced. A name already
 #' used by a manifest entry of another loader, or declared as an object by
 #' another resource, is an error.
+#'
+#' @section The manifest:
+#' The manifest is reconciled with the package exactly as by
+#' [write_monocle_manifest()], after the CDS and its placeholder are in place:
+#' the new resource is added or updated, entries of this package whose saved
+#' directory or placeholder no longer exist are removed as stale (so deleting
+#' a saved directory by hand never blocks the next save), other valid saved
+#' resources that are not yet registered are added, and entries of other adapters
+#' are kept as they are. Nothing but the manifest entries is deleted; saved
+#' directories and placeholders are never removed by reconciliation. If an
+#' entry of another adapter is invalid, nothing is saved.
 #'
 #' The new files are first created in a hidden staging directory in the package
 #' root (`.projectData.monocle3-stage-*`), where the saved directory is
@@ -102,12 +121,11 @@
 #'   directory, the placeholder, the manifest resource and the object that
 #'   [projectData::data_attach()] provides.
 #' @param package_dir Root of an existing R package *source* directory.
-#' @param convert_to_bpcells Convert the counts to an on-disk BPCells matrix
-#'   before saving? Only `counts` is converted. See the section on conversion.
 #' @param overwrite Replace an existing saved dataset and its placeholder?
 #' @return Invisibly, a list with the `name`, `package`, the paths of the saved
 #'   `directory`, `placeholder` and `manifest`, `manifest_status` (`"added"`,
-#'   `"updated"` or `"unchanged"`) and whether existing files were `replaced`.
+#'   `"updated"` or `"unchanged"`), whether existing files were `replaced`, and
+#'   the names of any `removed_stale` manifest entries.
 #' @examples
 #' \dontrun{
 #' # In a data package source directory:
@@ -120,8 +138,7 @@
 #' @seealso [write_monocle_manifest()] to register directories saved by other
 #'   means, [projectData_loaders()]
 #' @export
-save_monocle_cds <- function(cds, name, package_dir = ".", convert_to_bpcells = FALSE,
-                             overwrite = FALSE) {
+save_monocle_cds <- function(cds, name, package_dir = ".", overwrite = FALSE) {
   call <- sys.call()
   fail <- function(..., class = NULL) {
     stop(structure(
@@ -143,39 +160,43 @@ save_monocle_cds <- function(cds, name, package_dir = ".", convert_to_bpcells = 
     fail("`name` must be a single syntactically valid R object name that does not ",
          "start with a dot; got ", encodeString(format(name)[1L], quote = "'"), ".")
   }
-  for (arg in c("convert_to_bpcells", "overwrite")) {
-    value <- get(arg)
-    if (!is.logical(value) || length(value) != 1L || is.na(value)) {
-      fail("`", arg, "` must be TRUE or FALSE.")
-    }
+  if (!is.logical(overwrite) || length(overwrite) != 1L || is.na(overwrite)) {
+    fail("`overwrite` must be TRUE or FALSE.")
   }
   root <- check_package_source(package_dir, call = call)
   package <- unname(read.dcf(file.path(root, "DESCRIPTION"), fields = "Package")[1L, 1L])
 
   target <- check_save_targets(root, name, overwrite, fail)
 
-  counts_on_disk <- methods::is(
-    SummarizedExperiment::assay(cds, "counts", withDimnames = FALSE), "IterableMatrix"
-  )
-  if (!convert_to_bpcells && !counts_on_disk) {
-    fail("The counts of `cds` are an in-memory matrix, and the loader needs ",
-         "BPCells-backed counts. Use `convert_to_bpcells = TRUE`, or convert them ",
-         "yourself with monocle3::convert_counts_matrix().")
+  representation <- counts_representation(cds)
+  if (identical(representation$kind, "unsupported")) {
+    fail("The counts of `cds` cannot be saved: ", representation$reason, " ",
+         "Counts that are already an on-disk BPCells matrix are saved as they are, and ",
+         "in-memory sparse counts (dgCMatrix or dgTMatrix) are converted automatically; ",
+         "convert these counts to one of those first. Nothing was written.")
   }
 
-  manifest <- file.path(root, "inst", "projectData", "manifest.dcf")
-  loader_id <- projectData_loaders()$id
-  plan <- with_loader_registered({
-    existing <- read_existing_manifest(manifest, root)
-    found <- data.frame(resource = name, status = "discovered", reason = NA_character_,
-                        source = paste0("extdata/", name), path = NA_character_,
-                        placeholder = NA_character_, stringsAsFactors = FALSE)
-    plan_manifest(existing, found, loader_id)
-  })
-  if (identical(plan$report$status, "conflict")) {
-    fail("Cannot register '", name, "' in the manifest: ", plan$report$detail,
+  manifest <- manifest_path(root)
+  # What the package will contain once this resource is in place.
+  found <- discover_monocle_resources(root)
+  found <- rbind(found[found$resource != name, , drop = FALSE], data.frame(
+    resource = name, status = "discovered", reason = NA_character_,
+    source = paste0("extdata/", name), path = NA_character_,
+    placeholder = NA_character_, stringsAsFactors = FALSE
+  ))
+  plan <- reconcile_manifest(root, manifest, found, write = FALSE)$plan
+  own <- plan$report[plan$report$resource == name & plan$report$status == "conflict", ,
+                     drop = FALSE]
+  if (nrow(own)) {
+    fail("Cannot register '", name, "' in the manifest: ", own$detail,
          ". Nothing was written.", class = "projectData.monocle3_conflict")
   }
+  tryCatch(
+    with_loader_registered(check_unrelated_entries(plan, root)),
+    projectData.monocle3_manifest_error = function(e) {
+      fail(conditionMessage(e), class = "projectData.monocle3_manifest_error")
+    }
+  )
 
   external <- external_assays(cds)
   if (length(external)) {
@@ -202,7 +223,7 @@ save_monocle_cds <- function(cds, name, package_dir = ".", convert_to_bpcells = 
   dir.create(file.path(stage, "backup"))
 
   to_save <- cds
-  if (convert_to_bpcells) {
+  if (identical(representation$kind, "convertible")) {
     converted <- convert_counts_to_bpcells(cds, fail)
     to_save <- converted$cds
     convert_dir <- converted$dir
@@ -227,7 +248,7 @@ save_monocle_cds <- function(cds, name, package_dir = ".", convert_to_bpcells = 
   }
 
   outcome <- commit_staged_resource(
-    root = root, stage = stage, name = name, plan = plan, manifest = manifest,
+    root = root, stage = stage, name = name, manifest = manifest,
     staged_cds = staged_cds, staged_placeholder = staged_placeholder,
     old_cds = target$cds, old_placeholders = target$placeholders
   )
@@ -243,6 +264,7 @@ save_monocle_cds <- function(cds, name, package_dir = ".", convert_to_bpcells = 
          })
   }
 
+  report_manifest_changes(outcome$plan, outcome$written, warn = FALSE, except = name)
   report_save(root, name, package, outcome$manifest_status, target$replaced)
   invisible(list(
     name = name,
@@ -251,7 +273,8 @@ save_monocle_cds <- function(cds, name, package_dir = ".", convert_to_bpcells = 
     placeholder = file.path(root, "data", paste0(name, ".rda")),
     manifest = manifest,
     manifest_status = outcome$manifest_status,
-    replaced = target$replaced
+    replaced = target$replaced,
+    removed_stale = outcome$plan$report$resource[outcome$plan$report$status == "removed"]
   ))
 }
 
@@ -324,7 +347,44 @@ convert_counts_to_bpcells <- function(cds, fail) {
     fail("Converting the counts to BPCells changed the dimensions or the cell and ",
          "feature names; nothing was written.")
   }
+  if (!identical(counts_representation(converted)$kind, "bpcells_dir")) {
+    unlink(dir, recursive = TRUE)
+    fail("Converting the counts to BPCells did not produce an on-disk matrix; ",
+         "nothing was written.")
+  }
   list(cds = converted, dir = dir)
+}
+
+# Classifies the counts of a CDS without reading any values:
+#   bpcells_dir  already an on-disk BPCells matrix (every underlying matrix is a
+#                MatrixDir); saved as it is
+#   convertible  in memory, and monocle3::convert_counts_matrix() can move it to disk
+#   unsupported  anything else; `reason` names the class found
+counts_representation <- function(cds) {
+  if (!"counts" %in% SummarizedExperiment::assayNames(cds)) {
+    return(list(kind = "unsupported", reason = "`cds` has no `counts` assay."))
+  }
+  counts <- SummarizedExperiment::assay(cds, "counts", withDimnames = FALSE)
+  cls <- class(counts)[1L]
+  if (methods::is(counts, "IterableMatrix")) {
+    leaves <- vapply(BPCells::all_matrix_inputs(counts), function(m) class(m)[1L], "")
+    if (all(leaves == "MatrixDir")) {
+      return(list(kind = "bpcells_dir", class = cls))
+    }
+    if (all(leaves == "MatrixDir" | grepl("MatrixMem", leaves))) {
+      return(list(kind = "convertible", class = cls))
+    }
+    return(list(kind = "unsupported", reason = paste0(
+      "they are a BPCells matrix of class '", cls, "' built on ",
+      paste0("'", unique(leaves), "'", collapse = ", "),
+      ", which monocle3 cannot convert to an on-disk directory.")))
+  }
+  if (methods::is(counts, "dgCMatrix") || methods::is(counts, "dgTMatrix")) {
+    return(list(kind = "convertible", class = cls))
+  }
+  list(kind = "unsupported", reason = paste0(
+    "they are a '", cls, "' matrix, which monocle3::convert_counts_matrix() does not ",
+    "convert to BPCells."))
 }
 
 # Separate function so that tests can make the save step fail.
@@ -343,7 +403,7 @@ save_staged_cds <- function(cds, directory) {
 # Moves the staged files into the package, keeping the previous ones aside
 # until the manifest is written. Returns `error = NULL` on success; otherwise
 # the error, and whether the previous state was restored.
-commit_staged_resource <- function(root, stage, name, plan, manifest, staged_cds,
+commit_staged_resource <- function(root, stage, name, manifest, staged_cds,
                                    staged_placeholder, old_cds, old_placeholders) {
   dest_cds <- file.path(root, "inst", "extdata", name)
   dest_placeholder <- file.path(root, "data", paste0(name, ".rda"))
@@ -392,14 +452,18 @@ commit_staged_resource <- function(root, stage, name, plan, manifest, staged_cds
     placed <- c(placed, dest_cds)
     move(staged_placeholder, dest_placeholder)
     placed <- c(placed, dest_placeholder)
-    with_loader_registered(write_planned_manifest(plan, manifest, root))
-    plan$report$status
+    # Reconciles against what is now on disk, so the new resource is judged by
+    # the same discovery as any other.
+    reconcile_manifest(root, manifest, require = name)
   }, error = function(e) e)
 
   if (inherits(status, "error")) {
     return(list(error = status, restored = restore()))
   }
-  list(error = NULL, manifest_status = status)
+  report <- status$plan$report
+  list(error = NULL, plan = status$plan, written = status$written,
+       manifest_status = report$status[report$resource == name &
+                                         report$status %in% c("added", "updated", "unchanged")])
 }
 
 report_save <- function(root, name, package, manifest_status, replaced) {

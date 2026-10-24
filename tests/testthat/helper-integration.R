@@ -1,20 +1,31 @@
 # Helpers for integration tests against the installed fixture package
-# `projectData.monocle3.testdata` (two BPCells-backed CDS resources registered
-# in its manifest, one ordinary data frame, and `.rda` placeholders for the
-# CDS resources). The fixture package is never rebuilt or modified here.
+# `projectData.monocle3.testdata`, version 0.0.0.9002: three BPCells-backed CDS
+# resources registered in its manifest (`cds_bpcells_a`, `cds_bpcells_b` and
+# `cds_multiassay`, which also carries logcounts, spliced and ADT/CRISPR
+# alternative experiments), one ordinary data frame, and `.rda` placeholders for
+# the CDS resources. Later versions of that package dropped some of these
+# resources, so the tests skip unless all of them are installed. The fixture
+# package is never rebuilt or modified here.
 #
 # These helpers must not force lazy bindings: catalog and state inspection
 # only, no `get()`/`data_get()` of a CDS unless a test intends to open it.
 
 testdata_pkg <- "projectData.monocle3.testdata"
-testdata_cds <- c("cds_bpcells_a", "cds_bpcells_b")
-testdata_dims <- list(cds_bpcells_a = c(100L, 40L), cds_bpcells_b = c(80L, 30L))
+testdata_cds <- c("cds_bpcells_a", "cds_bpcells_b", "cds_multiassay")
+testdata_dims <- list(cds_bpcells_a = c(100L, 40L), cds_bpcells_b = c(80L, 30L),
+                      cds_multiassay = c(100L, 40L))
 
 skip_if_no_testdata <- function() {
   skip_on_cran()
   for (pkg in c("projectData", testdata_pkg, "monocle3", "BPCells",
                 "SummarizedExperiment", "withr")) {
     skip_if_not_installed(pkg)
+  }
+  extdata <- list.files(system.file("extdata", package = testdata_pkg))
+  if (!all(testdata_cds %in% extdata)) {
+    skip(paste0("needs ", testdata_pkg, " 0.0.0.9002 (resources ",
+                paste(testdata_cds, collapse = ", "), "); installed: ",
+                as.character(utils::packageVersion(testdata_pkg))))
   }
 }
 

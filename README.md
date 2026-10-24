@@ -51,7 +51,6 @@ projectData.monocle3::save_monocle_cds(
   cds_main_adults,                  # a monocle3 cell_data_set
   name = "cds_main_adults",
   package_dir = ".",
-  convert_to_bpcells = FALSE,       # TRUE converts in-memory counts first
   overwrite = FALSE
 )
 ```
@@ -87,11 +86,22 @@ Add `projectData.monocle3` to the data package's `Suggests` (and `Remotes`).
 
 Points to know:
 
-* The counts must be a BPCells on-disk matrix. In-memory counts are rejected
-  before anything is written, unless `convert_to_bpcells = TRUE`, which
-  converts a *copy* with `monocle3::convert_counts_matrix()` (only `counts`;
-  the intermediate matrix goes to a session temporary directory). Counts that
-  are already BPCells-backed are saved as they are.
+* The saved counts are always a BPCells on-disk matrix, and conversion is
+  automatic. In-memory counts (`dgCMatrix`/`dgTMatrix`, or a BPCells matrix held
+  in memory) are converted on a *copy* of the CDS with
+  `monocle3::convert_counts_matrix()` (only `counts`; the intermediate matrix
+  goes to a session temporary directory that is removed afterwards). Counts that
+  are already BPCells-backed are saved as they are, without reconversion. Any
+  other representation (a dense matrix, `DelayedMatrix`, HDF5-backed BPCells)
+  is an error raised before anything is written. Monocle adds its internal
+  `counts_row_order` assay to a converted copy; it is derived from the counts
+  and is not a separate assay.
+* Extra assays (for example `logcounts`, `spliced`) and alternative experiments
+  (`SingleCellExperiment::altExp()`, e.g. ADT and CRISPR) are stored with the
+  CDS and are tested to survive a save and a load for synthetic data; other
+  extensions are not assumed to be supported.
+* The manifest is reconciled with the package on every save (see below):
+  entries whose saved directory or placeholder was deleted are removed.
 * An existing dataset or placeholder is replaced only with `overwrite = TRUE`,
   and a `data/<name>.rda` that holds anything other than a placeholder is never
   replaced. Files are built in a hidden staging directory
@@ -139,13 +149,30 @@ projectData.monocle3::write_monocle_manifest(
 This is a package-authoring step; installed packages never generate manifests.
 It finds each saved CDS directory under `inst/extdata/` that has a matching
 placeholder in `data/` (ordinary `.rda` datasets and other directories are
-ignored), and adds or updates its manifest entry. It reports what was added,
-updated, unchanged, skipped (for example a CDS with no placeholder, or a `.rda`
-that holds real data) or in conflict (a resource already assigned to another
-loader, which is left alone). Entries for other loaders are preserved, running
-it again changes nothing, and no CDS is loaded or BPCells file created. See
-`?write_monocle_manifest` for details. `save_monocle_cds()` uses the same
-registration logic.
+ignored), and adds or updates its manifest entry.
+
+It also **reconciles** the manifest: the saved directories and placeholders
+that are present are the source of truth for the entries owned by this package
+(loader `projectData.monocle3::cds`). If you delete a saved directory (or its
+placeholder) while developing, the next call removes the stale entry instead of
+failing:
+
+```
+projectData.monocle3: manifest updated
+  Added: cds_bpcells_a
+  Removed stale: cds_bpcells_b
+  Preserved: 2 unrelated resources
+```
+
+Nothing is printed when nothing changes. Entries of other loaders are kept
+unchanged and never repaired or removed (a resource or object name owned by
+another adapter is reported as a conflict and left alone, and an invalid entry of
+another adapter makes the call fail rather than be edited). A manifest that
+cannot be parsed is never overwritten. Reconciliation edits only the manifest:
+it never deletes a saved CDS directory or a placeholder. If no entry remains,
+the manifest file is removed. Running it again changes nothing, and no CDS is
+loaded or BPCells file created. See `?write_monocle_manifest` for details.
+`save_monocle_cds()` runs the same reconciliation after it has saved the CDS.
 
 ### The manifest it writes
 

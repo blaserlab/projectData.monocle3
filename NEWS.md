@@ -1,3 +1,30 @@
+# projectData.monocle3 0.0.0.9005
+
+* `write_monocle_manifest()` now reconciles the manifest with the package. Entries
+  owned by this package (loader `projectData.monocle3::cds`) whose saved CDS
+  directory or placeholder no longer exists are removed as stale, so deleting a
+  saved directory by hand no longer makes the next call fail. New valid resources
+  are added, current ones updated, and entries of other adapters are preserved
+  unchanged. The existing manifest is read with structural checks only (it need
+  not pass source-existence validation); the complete proposed manifest is
+  validated and written atomically only if valid. A malformed manifest, or an
+  invalid entry of another adapter, stops the call and is left untouched. When no
+  entry remains the manifest file is removed. Directories and placeholders are
+  never deleted. A concise summary is printed only when the manifest changes.
+* `save_monocle_cds()` uses the same reconciliation (one implementation, shared
+  with `write_monocle_manifest()`), after the CDS and placeholder are in place;
+  the result gains `removed_stale`. Entries of other adapters that fail validation
+  stop the save before anything is written.
+* **Breaking:** `save_monocle_cds()` no longer has `convert_to_bpcells`. Counts
+  are inspected: on-disk BPCells counts are saved as they are, in-memory counts
+  (dgCMatrix/dgTMatrix or a BPCells in-memory matrix) are converted automatically
+  on a copy with `monocle3::convert_counts_matrix()`, and anything else
+  (dense, DelayedArray, HDF5-backed) is an error before writing.
+* New tests: reconciliation (stale directories and placeholders, unrelated and
+  conflicting entries, malformed manifests, idempotence, empty result), automatic
+  conversion, and round trips of extra assays and ADT/CRISPR alternative
+  experiments. No loader changes.
+
 # projectData.monocle3 0.0.0.9004
 
 * New exported `save_monocle_cds(cds, name, package_dir, convert_to_bpcells,

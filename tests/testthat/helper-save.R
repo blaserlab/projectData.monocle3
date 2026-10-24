@@ -91,3 +91,75 @@ install_source_pkg <- function(pkg, env = parent.frame()) {
   }
   lib
 }
+
+# A CDS with extra assays and ADT/CRISPR alternative experiments, built on a
+# fixture CDS (`base`). Values are deterministic and small.
+add_multiassay <- function(base) {
+  counts <- cds_fixtures()$human$expected$counts
+  SummarizedExperiment::assay(base, "logcounts") <- log1p(counts)
+  SummarizedExperiment::assay(base, "spliced") <- Matrix::Matrix(counts * 0.5, sparse = TRUE)
+
+  make_alt <- function(prefix, n_features, seed) {
+    withr::with_seed(seed, {
+      m <- matrix(rpois(n_features * ncol(base), 4), n_features, ncol(base),
+                  dimnames = list(paste0(prefix, seq_len(n_features)), colnames(base)))
+    })
+    alt <- SingleCellExperiment::SingleCellExperiment(
+      assays = list(counts = m, logcounts = log1p(m)),
+      rowData = data.frame(row.names = rownames(m), marker = paste0("m_", rownames(m))),
+      metadata = list(source = prefix, n = n_features)
+    )
+    alt
+  }
+  SingleCellExperiment::altExp(base, "ADT") <- make_alt("adt", 8L, 6154L)
+  SingleCellExperiment::altExp(base, "CRISPR") <- make_alt("sg", 5L, 3971L)
+  base
+}
+
+fixture_multiassay_cds <- function(counts = c("memory", "bpcells")) {
+  counts <- match.arg(counts)
+  add_multiassay(if (counts == "memory") fixture_memory_cds() else fixture_bpcells_cds())
+}
+
+dense <- function(x) unname(as.matrix(x))
+
+# Assay names without monocle's internal, derived counts_row_order.
+biological_assays <- function(cds) {
+  setdiff(SummarizedExperiment::assayNames(cds), "counts_row_order")
+}
+
+expect_alt_exps_equal <- function(original, reloaded) {
+  expect_identical(SingleCellExperiment::altExpNames(reloaded),
+                   SingleCellExperiment::altExpNames(original))
+  for (nm in SingleCellExperiment::altExpNames(original)) {
+    a <- SingleCellExperiment::altExp(original, nm)
+    b <- SingleCellExperiment::altExp(reloaded, nm)
+    expect_identical(dim(b), dim(a))
+    expect_identical(dimnames(b), dimnames(a))
+    expect_identical(SummarizedExperiment::assayNames(b), SummarizedExperiment::assayNames(a))
+    for (assay in SummarizedExperiment::assayNames(a)) {
+      expect_equal(dense(SummarizedExperiment::assay(b, assay)),
+                   dense(SummarizedExperiment::assay(a, assay)))
+    }
+    expect_equal(as.data.frame(SummarizedExperiment::rowData(b)),
+                 as.data.frame(SummarizedExperiment::rowData(a)))
+    expect_identical(S4Vectors::metadata(b), S4Vectors::metadata(a))
+  }
+}
+
+# The assays that must survive a save and a load, and, when Monocle's
+# counts_row_order is present, that it is consistent with the counts.
+expect_round_trip_equal <- function(original, reloaded) {
+  expect_identical(dimnames(reloaded), dimnames(original))
+  expect_setequal(biological_assays(reloaded), biological_assays(original))
+  for (assay in setdiff(biological_assays(original), "counts")) {
+    expect_equal(dense(SummarizedExperiment::assay(reloaded, assay)),
+                 dense(SummarizedExperiment::assay(original, assay)))
+  }
+  expect_equal(unname(cds_counts(reloaded)), unname(cds_counts(original)))
+  if ("counts_row_order" %in% SummarizedExperiment::assayNames(reloaded)) {
+    expect_equal(dense(SummarizedExperiment::assay(reloaded, "counts_row_order")),
+                 dense(SummarizedExperiment::assay(reloaded, "counts")))
+  }
+  expect_alt_exps_equal(original, reloaded)
+}

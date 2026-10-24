@@ -248,22 +248,6 @@ test_that("skipped directories are reported with a warning and not registered", 
   expect_identical(tools::md5sum(file.path(pkg, "data", "real_data.rda")), data_before)
 })
 
-test_that("a skipped CDS leaves its existing manifest entry alone", {
-  pkg <- new_pkg_source()
-  add_fake_cds(pkg, "cds_a")
-  write_manifest_text(pkg, c(
-    "ManifestVersion: 1", "",
-    "Resource: cds_a", "Loader: projectData.monocle3::cds", "Source: extdata/cds_a",
-    "Objects: cds_a", "Title: custom"
-  ))
-  before <- file_state(pkg)
-
-  out <- run_write(pkg)
-
-  expect_identical(out$report$status, "skipped")
-  expect_identical(file_state(pkg), before)
-})
-
 test_that("serialized CDS directories and placeholders are never modified", {
   pkg <- new_pkg_source()
   add_resource(pkg, "cds_a")

@@ -12,8 +12,8 @@ write_monocle_manifest(package_dir = ".")
 }
 \value{
 Invisibly, a data frame with one row per resource considered:
-\code{resource}, \code{status} (\code{"added"}, \code{"updated"}, \code{"unchanged"}, \code{"skipped"} or
-\code{"conflict"}) and \code{detail}. Attributes \code{manifest} (the path) and \code{written}
+\code{resource}, \code{status} (\code{"added"}, \code{"updated"}, \code{"unchanged"}, \code{"removed"},
+\code{"skipped"} or \code{"conflict"}) and \code{detail}. Attributes \code{manifest} (the path) and \code{written}
 (whether the file was written) are attached. Skipped resources and
 conflicts also raise warnings of class \code{projectData.monocle3_skipped} and
 \code{projectData.monocle3_conflict}.
@@ -59,24 +59,50 @@ object is discoverable with \code{\link[utils:data]{utils::data()}} and can be d
 usual way. The file is inspected without running anything: its serialized
 header is parsed to read the object name and, for a small character vector,
 its content. Currently the historical string \code{"This is a placeholder object."} is recognized. A CDS without a placeholder is skipped with a
-warning. A \code{.rda} that holds a real dataset, or that cannot be inspected, is
+warning (and, if it already had a manifest entry, that entry is removed as
+stale). A \code{.rda} that holds a real dataset, or that cannot be inspected, is
 never treated as a placeholder, and no registration is created for it.
 Placeholder files are never created or modified.
 }
 
-\section{Existing manifests}{
+\section{Reconciliation}{
 
-Entries are read with \code{\link[projectData:data_manifest_validate]{projectData::data_manifest_validate()}}, so an
-invalid manifest stops the call and is left untouched. Entries for other
-loaders and resources are kept in their original order, with all of their
-fields. A resource already assigned to a different loader, or whose object
-name is already declared by another resource, is reported as a \strong{conflict}
-and left as it is; this function never takes over entries managed by
-something else. A Monocle entry that already exists is updated only where it
-differs: the loader, source, object, adapter and recorded class are set to
-the values described below, a missing help topic is filled in, and a
-\code{Title} or \code{Options} you added by hand are kept. New entries are added at
-the end.
+The saved directories and placeholders currently in the package are the
+source of truth for the entries this package owns, that is, those whose
+\code{Loader} is \code{projectData.monocle3::cds}. The existing manifest is reconciled
+with them, so a directory deleted by hand during development never leaves a
+manifest that has to be repaired manually:\tabular{ll}{
+   Existing entry \tab Action \cr
+   Monocle resource with a valid directory and placeholder \tab kept, or updated where it differs \cr
+   Monocle entry whose saved directory is gone \tab removed as stale \cr
+   Monocle entry whose placeholder is missing \tab removed as stale \cr
+   New valid directory with a placeholder \tab added \cr
+   Entry of any other loader or adapter \tab kept unchanged, with all its fields \cr
+   Resource name or object name already used by another adapter \tab \strong{conflict}: reported, never taken over \cr
+   Monocle entry whose directory exists but is invalid \tab kept; the call fails because the manifest would not be valid \cr
+}
+
+
+Reconciliation only ever changes manifest entries. \strong{It never deletes a
+saved CDS directory or a placeholder}, and removing an entry does not touch
+the files it described.
+
+The existing manifest is first read with the structural checks needed to
+reconcile it safely (readable, known fields, \code{ManifestVersion: 1}, a
+\code{Resource} and \code{Loader} in every record, unique resources, well-formed
+\code{Options}), without requiring its sources to exist. A manifest that fails
+these checks stops the call and is left untouched. The complete
+proposed manifest is then validated by
+\code{\link[projectData:data_manifest_validate]{projectData::data_manifest_validate()}}'s rules (through
+\code{\link[projectData:data_manifest_write]{projectData::data_manifest_write()}}, including this package's loader) and
+written only if that succeeds. An invalid entry of another adapter is never
+repaired or removed: the error reports it, and the manifest is left as it
+was.
+
+An existing Monocle entry is updated only where it differs: the loader,
+source, object, adapter and recorded class are set to the values described
+below, a missing help topic is filled in, and a \code{Title} or \code{Options} you
+added by hand are kept. New entries are added at the end.
 
 Each new entry has the fields \code{Resource}, \code{Loader: projectData.monocle3::cds}, \verb{Source: extdata/<name>} (the installed layout,
 never an absolute path or \code{inst/...}), \code{Objects}, \code{AdapterPackage: projectData.monocle3}, \code{RecordedClass: cell_data_set} and \code{HelpTopic}.
@@ -84,14 +110,16 @@ never an absolute path or \code{inst/...}), \code{Objects}, \code{AdapterPackage
 \code{\link[projectData:data_manifest_write]{projectData::data_manifest_write()}} leaves out of the file; it reads back
 the same either way.
 
-The manifest is only rewritten when something was added or updated, so
-running the function again changes nothing. When it is rewritten, the file
-is produced by \code{\link[projectData:data_manifest_write]{projectData::data_manifest_write()}}, which validates every
-entry (including with this package's loader), checks that the text reads
-back unchanged, and replaces the manifest with a single rename. A failure
-leaves the previous manifest in place. As that writer emits every record in
-its standard field order, hand-chosen field order or spacing in entries you
-did not change is normalized when another entry is added.
+The manifest is only rewritten when something was added, updated or removed,
+so running the function again changes nothing and prints nothing. When it is
+rewritten, the file is produced by \code{\link[projectData:data_manifest_write]{projectData::data_manifest_write()}},
+which validates every entry, checks that the text reads back unchanged, and
+replaces the manifest with a single rename. A failure leaves the previous
+manifest in place. As that writer emits every record in its standard field
+order, hand-chosen field order or spacing in entries you did not change is
+normalized when the manifest is rewritten. If no entry remains at all, the
+manifest file is removed (and its directory, if that is left empty), because
+a manifest without resources carries no information.
 }
 
 \section{No CDS is loaded}{

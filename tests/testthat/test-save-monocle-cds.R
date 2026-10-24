@@ -20,7 +20,6 @@ test_that("invalid inputs fail before anything is written", {
   fails(cds, "..", pkg)
   fails(cds, ".hidden", pkg)
   fails(cds, "if", pkg)
-  fails(cds, "ok_name", pkg, convert_to_bpcells = NA)
   fails(cds, "ok_name", pkg, overwrite = "yes")
   expect_error(save_monocle_cds(cds, "ok_name", file.path(pkg, "missing")),
                class = "projectData.monocle3_package_dir_error")
@@ -31,12 +30,13 @@ test_that("invalid inputs fail before anything is written", {
   expect_length(stage_dirs(pkg), 0L)
 })
 
-test_that("an in-memory CDS is rejected before writing unless conversion is requested", {
+test_that("convert_to_bpcells is no longer part of the interface", {
+  expect_named(formals(save_monocle_cds), c("cds", "name", "package_dir", "overwrite"))
   skip_if_no_monocle()
   pkg <- new_save_pkg()
   before <- file_state(pkg)
-  expect_error(save_monocle_cds(fixture_memory_cds(), "cds_mem", pkg),
-               "convert_to_bpcells = TRUE", class = "projectData.monocle3_save_error")
+  expect_error(save_monocle_cds(fixture_bpcells_cds(), "ds", pkg, convert_to_bpcells = TRUE),
+               "unused argument")
   expect_identical(file_state(pkg), before)
 })
 
@@ -271,7 +271,7 @@ test_that("a failure while committing restores the previous files", {
   expect_false(dir.exists(file.path(fresh, "inst")))
 })
 
-test_that("the caller's CDS is unchanged by saving, with and without conversion", {
+test_that("the caller's CDS is unchanged by saving, converted or not", {
   skip_if_no_monocle()
   pkg <- new_save_pkg()
   for (cds in list(fixture_bpcells_cds(), fixture_memory_cds())) {
@@ -281,8 +281,7 @@ test_that("the caller's CDS is unchanged by saving, with and without conversion"
     bp_state <- if (!is.null(bp_dir)) file_state(bp_dir)
     cwd_before <- list.files(getwd(), all.files = TRUE)
 
-    save_quiet(cds, paste0("ds", if (is.null(bp_dir)) "_mem" else "_bp"), pkg,
-               convert_to_bpcells = is.null(bp_dir))
+    save_quiet(cds, paste0("ds", if (is.null(bp_dir)) "_mem" else "_bp"), pkg)
 
     expect_identical(cds, snapshot)
     expect_identical(class(SummarizedExperiment::assay(cds, "counts")), class(counts_before))
@@ -291,17 +290,20 @@ test_that("the caller's CDS is unchanged by saving, with and without conversion"
   }
 })
 
-test_that("convert_to_bpcells = FALSE does not convert counts", {
+test_that("counts that are already BPCells-backed are not converted again", {
   skip_if_no_monocle()
   pkg <- new_save_pkg()
   testthat::local_mocked_bindings(
     convert_counts_to_bpcells = function(cds, fail) stop("conversion must not be called")
   )
   expect_no_error(save_quiet(fixture_bpcells_cds(), "ds", pkg))
-  expect_error(save_monocle_cds(fixture_memory_cds(), "ds_mem", pkg), "convert_to_bpcells")
+  restored <- open_saved(pkg, "ds")
+  expect_s4_class(SummarizedExperiment::assay(restored, "counts"), "MatrixDir")
+  expect_equal(unname(cds_counts(restored)), unname(cds_fixtures()$human$expected$counts))
+  expect_identical(dimnames(restored), dimnames(cds_fixtures()$human$expected$counts))
 })
 
-test_that("convert_to_bpcells = TRUE converts a copy and preserves identifiers, metadata and reductions", {
+test_that("in-memory counts are converted automatically, on a copy, preserving identifiers, metadata and reductions", {
   skip_if_no_monocle()
   pkg <- new_save_pkg()
   cds <- fixture_memory_cds()
@@ -309,7 +311,7 @@ test_that("convert_to_bpcells = TRUE converts a copy and preserves identifiers, 
   expected <- cds_fixtures()$human$expected
   tmp_before <- list.files(tempdir(), pattern = "projectData.monocle3-convert")
 
-  out <- save_quiet(cds, "ds_conv", pkg, convert_to_bpcells = TRUE)
+  out <- save_quiet(cds, "ds_conv", pkg)
   expect_length(out$warnings, 0L)
   # The intermediate matrix directory does not outlive the call.
   expect_identical(list.files(tempdir(), pattern = "projectData.monocle3-convert"), tmp_before)
@@ -325,14 +327,6 @@ test_that("convert_to_bpcells = TRUE converts a copy and preserves identifiers, 
                expected$gene_md$gene_short_name)
   expect_equal(SingleCellExperiment::reducedDims(restored)$UMAP, expected$umap, ignore_attr = TRUE)
   expect_equal(SingleCellExperiment::reducedDims(restored)$PCA, expected$pca, ignore_attr = TRUE)
-})
-
-test_that("convert_to_bpcells = TRUE also accepts counts that are already BPCells-backed", {
-  skip_if_no_monocle()
-  pkg <- new_save_pkg()
-  save_quiet(fixture_bpcells_cds(), "ds", pkg, convert_to_bpcells = TRUE)
-  restored <- open_saved(pkg, "ds")
-  expect_equal(unname(cds_counts(restored)), unname(cds_fixtures()$human$expected$counts))
 })
 
 test_that("an in-memory alternative assay survives, and is not converted", {
@@ -352,10 +346,10 @@ test_that("an in-memory alternative assay survives, and is not converted", {
   expect_equal(unname(as.matrix(got)), unname(as.matrix(alt)))
   expect_equal(unname(cds_counts(restored)), unname(cds_fixtures()$human$expected$counts))
 
-  # Also when counts are converted: the alternative assay stays in memory.
+  # Also when counts are converted automatically: the alternative assay stays in memory.
   mem <- fixture_memory_cds()
   SummarizedExperiment::assay(mem, "alt_mem") <- alt
-  save_quiet(mem, "ds_conv", pkg, convert_to_bpcells = TRUE)
+  save_quiet(mem, "ds_conv", pkg)
   conv <- open_saved(pkg, "ds_conv")
   expect_false(methods::is(SummarizedExperiment::assay(conv, "alt_mem"), "IterableMatrix"))
   expect_equal(unname(as.matrix(SummarizedExperiment::assay(conv, "alt_mem"))), unname(as.matrix(alt)))
@@ -400,7 +394,7 @@ test_that("a saved package installs and works through projectData, also after da
   pkg <- new_save_pkg("savedpkg")
   expected <- cds_fixtures()$human$expected
   save_quiet(fixture_bpcells_cds("human"), "cds_human", pkg)
-  save_quiet(fixture_memory_cds("mouse"), "cds_mouse", pkg, convert_to_bpcells = TRUE)
+  save_quiet(fixture_memory_cds("mouse"), "cds_mouse", pkg)
   lib <- install_source_pkg(pkg)
 
   # data() gives only the informative placeholder.
@@ -467,4 +461,97 @@ test_that("a manifest entry takes precedence over the classed placeholder in dat
   row <- without[without$object == "cds_prec", , drop = FALSE]
   expect_identical(row$origin, "index")
   expect_identical(row$loader, "projectData::dataset")
+})
+
+test_that("saving repairs a manifest whose registered directories were deleted", {
+  skip_if_no_monocle()
+  pkg <- new_save_pkg()
+  cds <- fixture_bpcells_cds()
+  save_quiet(cds, "cds_a", pkg)
+  save_quiet(cds, "cds_b", pkg)
+  save_quiet(cds, "cds_keep", pkg)
+  unlink(file.path(pkg, "inst", "extdata", c("cds_a", "cds_b")), recursive = TRUE)
+  placeholders <- file_state(file.path(pkg, "data"))
+
+  expect_error(projectData::data_manifest_validate(manifest_file(pkg), root = pkg),
+               "does not exist")
+  out <- save_quiet(cds, "cds_a", pkg, overwrite = TRUE)
+
+  expect_identical(out$result$manifest_status, "unchanged")
+  expect_identical(out$result$removed_stale, "cds_b")
+  expect_identical(manifest_resources(pkg), c("cds_a", "cds_keep"))
+  expect_no_error(projectData::data_manifest_validate(manifest_file(pkg), root = pkg))
+  expect_identical(dim(open_saved(pkg, "cds_a")), dim(cds))
+  # The repair deleted no placeholder and no other saved directory.
+  after <- file_state(file.path(pkg, "data"))
+  expect_identical(after$files, placeholders$files)
+  expect_true(dir.exists(file.path(pkg, "inst", "extdata", "cds_keep")))
+  expect_false(dir.exists(file.path(pkg, "inst", "extdata", "cds_b")))
+})
+
+test_that("saving a new resource when the manifest holds only stale entries leaves a valid manifest", {
+  skip_if_no_monocle()
+  pkg <- new_save_pkg()
+  write_manifest_text(pkg, c("ManifestVersion: 1", "",
+                             "Resource: old_a", "Loader: projectData.monocle3::cds",
+                             "Source: extdata/old_a", "Objects: old_a", "",
+                             "Resource: old_b", "Loader: projectData.monocle3::cds",
+                             "Source: extdata/old_b", "Objects: old_b"))
+
+  msgs <- testthat::capture_messages(save_monocle_cds(fixture_bpcells_cds(), "fresh", pkg))
+
+  expect_identical(manifest_resources(pkg), "fresh")
+  expect_match(paste(msgs, collapse = ""), "Removed stale: old_a, old_b", fixed = TRUE)
+  expect_no_error(projectData::data_manifest_validate(manifest_file(pkg), root = pkg))
+})
+
+test_that("saving keeps entries of other adapters, and refuses when one of them is invalid", {
+  skip_if_no_monocle()
+  pkg <- new_save_pkg()
+  dir.create(file.path(pkg, "inst", "extdata", "other_thing"), recursive = TRUE)
+  writeLines("x", file.path(pkg, "inst", "extdata", "other_thing", "payload.txt"))
+  write_manifest_text(pkg, c("ManifestVersion: 1", "", save_other_entry, "",
+                             "Resource: stale", "Loader: projectData.monocle3::cds",
+                             "Source: extdata/stale", "Objects: stale"))
+
+  save_quiet(fixture_bpcells_cds(), "ds", pkg)
+
+  expect_identical(manifest_resources(pkg), c("other_res", "ds"))
+  d <- projectData::data_manifest_validate(manifest_file(pkg), root = pkg)
+  expect_identical(d[[1]]$title, "Hand-written title")
+
+  # Another adapter's entry that does not validate is never repaired; nothing is saved.
+  unlink(file.path(pkg, "inst", "extdata", "other_thing"), recursive = TRUE)
+  before <- file_state(pkg)
+  expect_error(save_monocle_cds(fixture_bpcells_cds(), "ds2", pkg),
+               "other_res.*other_thing|other_thing.*other_res",
+               class = "projectData.monocle3_manifest_error")
+  expect_identical(file_state(pkg), before)
+  expect_length(stage_dirs(pkg), 0L)
+})
+
+test_that("a malformed manifest stops the save without being touched", {
+  skip_if_no_monocle()
+  pkg <- new_save_pkg()
+  write_manifest_text(pkg, "not: a: manifest")
+  before <- file_state(pkg)
+  expect_error(save_monocle_cds(fixture_bpcells_cds(), "ds", pkg), "was not modified")
+  expect_identical(file_state(pkg), before)
+  expect_length(stage_dirs(pkg), 0L)
+})
+
+test_that("a failed commit leaves stale manifest entries and files exactly as they were", {
+  skip_if_no_monocle()
+  pkg <- new_save_pkg()
+  write_manifest_text(pkg, c("ManifestVersion: 1", "",
+                             "Resource: stale", "Loader: projectData.monocle3::cds",
+                             "Source: extdata/stale", "Objects: stale"))
+  before <- file_state(pkg)
+  testthat::local_mocked_bindings(
+    write_planned_manifest = function(plan, manifest, root) stop("manifest not writable")
+  )
+
+  expect_error(save_monocle_cds(fixture_bpcells_cds(), "ds", pkg), "previous files were restored")
+  expect_identical(file_state(pkg), before)
+  expect_identical(manifest_resources(pkg), "stale")
 })

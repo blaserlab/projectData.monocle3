@@ -4,13 +4,7 @@
 \alias{save_monocle_cds}
 \title{Save a Monocle 3 CDS into a data package source tree}
 \usage{
-save_monocle_cds(
-  cds,
-  name,
-  package_dir = ".",
-  convert_to_bpcells = FALSE,
-  overwrite = FALSE
-)
+save_monocle_cds(cds, name, package_dir = ".", overwrite = FALSE)
 }
 \arguments{
 \item{cds}{A Monocle 3 \code{cell_data_set}.}
@@ -21,15 +15,13 @@ directory, the placeholder, the manifest resource and the object that
 
 \item{package_dir}{Root of an existing R package \emph{source} directory.}
 
-\item{convert_to_bpcells}{Convert the counts to an on-disk BPCells matrix
-before saving? Only \code{counts} is converted. See the section on conversion.}
-
 \item{overwrite}{Replace an existing saved dataset and its placeholder?}
 }
 \value{
 Invisibly, a list with the \code{name}, \code{package}, the paths of the saved
 \code{directory}, \code{placeholder} and \code{manifest}, \code{manifest_status} (\code{"added"},
-\code{"updated"} or \code{"unchanged"}) and whether existing files were \code{replaced}.
+\code{"updated"} or \code{"unchanged"}), whether existing files were \code{replaced}, and
+the names of any \code{removed_stale} manifest entries.
 }
 \description{
 \code{save_monocle_cds()} is a \strong{package-authoring} operation. With one call it
@@ -55,33 +47,42 @@ the caller's \code{cds} is not modified.
 
 The CDS is written with \code{monocle3::save_monocle_objects()} using
 \code{archive_control = list(archive_type = "none")} (no tar archive), so the
-directory is installed as is. The counts must be a BPCells on-disk matrix,
-because that is what the loader restores; \code{save_monocle_objects()} copies the
-matrix directory into the saved directory. Everything else, including
-metadata, reductions, their nearest-neighbour indexes and any in-memory
-alternative assays, is stored in \code{cds_object.rds} and the index files that
-Monocle writes.
-
-\code{save_monocle_objects()} converts nothing by itself, with two exceptions
-worth knowing: it writes the CDS as HDF5 instead of rds if any assay is
-HDF5-backed (such a save is rejected here because the loader does not
-support it), and a CDS with in-memory counts is saved \emph{without} a BPCells
-directory (rejected here as well, with advice to use
-\code{convert_to_bpcells = TRUE}).
+directory is installed as is. The loader restores BPCells on-disk counts, so
+the counts of the saved CDS always are such a matrix;
+\code{save_monocle_objects()} copies the matrix directory into the saved
+directory. Everything else, including metadata, reductions, their
+nearest-neighbour indexes and any in-memory alternative assays and
+alternative experiments, is stored in \code{cds_object.rds} and the index files
+that Monocle writes.
 }
 
 \section{BPCells conversion}{
 
-With \code{convert_to_bpcells = FALSE} (the default) no assay is converted and
-the CDS is saved as it is; counts that are already BPCells-backed pass
-through unchanged, and in-memory counts are an error raised before anything is
-written. With \code{convert_to_bpcells = TRUE} a \emph{separate} copy of the CDS gets
-its \code{counts} assay converted with \code{monocle3::convert_counts_matrix()}
-(\code{matrix_class = "BPCells"}, \code{matrix_mode = "dir"}), writing the intermediate
-matrix to a temporary directory of the session (never the working
-directory), which is removed once the CDS is saved. Only \code{counts} is
-converted; other assays are left alone. Cell and feature names must be
-unchanged by the conversion, which is checked.
+Conversion is automatic; there is nothing to switch on. The \code{counts} assay is
+inspected first (with \code{methods::is()} against BPCells' \code{IterableMatrix} class
+and \code{BPCells::all_matrix_inputs()} to find the matrices underneath):
+\itemize{
+\item \strong{Counts that are already an on-disk BPCells matrix} (a \code{MatrixDir},
+possibly lazily subset or transformed) are \emph{not} converted again. They are
+saved as they are.
+\item \strong{In-memory counts} (a \code{dgCMatrix} or \code{dgTMatrix}, or a BPCells matrix held
+in memory) are converted on a \emph{separate working copy} of the CDS with
+\code{monocle3::convert_counts_matrix()} (\code{matrix_class = "BPCells"},
+\code{matrix_mode = "dir"}). The intermediate matrix goes to a temporary
+directory of the session (never the working directory) that is removed once
+the CDS is saved, and the caller's \code{cds} is not modified. Cell and feature
+names must be unchanged by the conversion, which is checked. Monocle
+adds its internal, derived \code{counts_row_order} assay to the converted copy;
+it is a row-oriented copy of the counts, not a separate assay, and is
+regenerated whenever the CDS is loaded.
+\item \strong{Any other representation} (for example a dense \code{matrix}, a
+\code{DelayedMatrix} or an HDF5-backed BPCells matrix) is an error raised before
+anything is written, naming the class found.
+}
+
+Only \code{counts} is converted; other assays are left alone. \code{save_monocle_objects()}
+itself writes the CDS as HDF5 instead of rds if any assay is HDF5-backed
+(such a save is rejected here because the loader does not support it).
 }
 
 \section{Alternative assays}{
@@ -108,6 +109,19 @@ this package (or the historical \code{"This is a placeholder object."}). A
 \verb{data/<name>.rda} that holds anything else is never replaced. A name already
 used by a manifest entry of another loader, or declared as an object by
 another resource, is an error.
+}
+
+\section{The manifest}{
+
+The manifest is reconciled with the package exactly as by
+\code{\link[=write_monocle_manifest]{write_monocle_manifest()}}, after the CDS and its placeholder are in place:
+the new resource is added or updated, entries of this package whose saved
+directory or placeholder no longer exist are removed as stale (so deleting
+a saved directory by hand never blocks the next save), other valid saved
+resources that are not yet registered are added, and entries of other adapters
+are kept as they are. Nothing but the manifest entries is deleted; saved
+directories and placeholders are never removed by reconciliation. If an
+entry of another adapter is invalid, nothing is saved.
 
 The new files are first created in a hidden staging directory in the package
 root (\verb{.projectData.monocle3-stage-*}), where the saved directory is

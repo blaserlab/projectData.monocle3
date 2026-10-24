@@ -39,16 +39,19 @@ test_that("a generated manifest makes the test data package work through project
   placeholders <- file_state(file.path(pkg, "data"))
   unlink(manifest_file(pkg))
   expect_false(file.exists(manifest_file(pkg)))
+  expected <- list.files(file.path(pkg, "inst", "extdata"))
+  has_ordinary <- file.exists(file.path(pkg, "data", "ordinary_data.rda"))
+  first <- expected[[1]]
 
   out <- run_write(pkg)
 
-  expect_setequal(out$report$resource, testdata_cds)
+  expect_setequal(out$report$resource, expected)
   expect_true(all(out$report$status == "added"))
   expect_length(out$warnings, 0L)
   expect_identical(file_state(file.path(pkg, "inst", "extdata")), source_snapshot)
   expect_identical(file_state(file.path(pkg, "data")), placeholders)
 
-  expect_setequal(manifest_resources(pkg), testdata_cds)
+  expect_setequal(manifest_resources(pkg), expected)
   expect_false("ordinary_data" %in% manifest_resources(pkg))
   expect_no_error(projectData::data_manifest_validate(manifest_file(pkg), root = pkg))
 
@@ -71,32 +74,52 @@ test_that("a generated manifest makes the test data package work through project
   projectData::data_attach(testdata_pkg, lib.loc = lib)
 
   cat <- testdata_catalog()
-  expect_setequal(cat$object, c(testdata_cds, "ordinary_data"))
+  expect_true(all(expected %in% cat$object))
   loader <- stats::setNames(cat$loader, cat$object)
-  expect_identical(loader[["cds_bpcells_a"]], "projectData.monocle3::cds")
-  expect_identical(loader[["cds_bpcells_b"]], "projectData.monocle3::cds")
-  expect_identical(loader[["ordinary_data"]], "projectData::dataset")
   origin <- stats::setNames(cat$origin, cat$object)
-  expect_identical(origin[["cds_bpcells_a"]], "manifest")
-  expect_identical(origin[["ordinary_data"]], "index")
-  expect_identical(
-    stats::setNames(cat$source, cat$object)[testdata_cds],
-    c(cds_bpcells_a = "extdata/cds_bpcells_a", cds_bpcells_b = "extdata/cds_bpcells_b")
-  )
+  expect_true(all(loader[expected] == "projectData.monocle3::cds"))
+  expect_true(all(origin[expected] == "manifest"))
+  expect_identical(stats::setNames(cat$source, cat$object)[expected],
+                   stats::setNames(paste0("extdata/", expected), expected))
   # Nothing has been opened by registration.
-  expect_true(all(cat$state[cat$object %in% testdata_cds] == "unopened"))
+  expect_true(all(cat$state[cat$object %in% expected] == "unopened"))
 
-  expect_identical(projectData::data_get("ordinary_data"), data.frame(letters = letters[1:10]))
+  if (has_ordinary) {
+    expect_identical(loader[["ordinary_data"]], "projectData::dataset")
+    expect_identical(origin[["ordinary_data"]], "index")
+    expect_identical(projectData::data_get("ordinary_data"), data.frame(letters = letters[1:10]))
+  }
 
-  cds <- projectData::data_get("cds_bpcells_a")
+  cds <- projectData::data_get(first)
   expect_s4_class(cds, "cell_data_set")
-  expect_identical(dim(cds), testdata_dims$cds_bpcells_a)
   counts <- SummarizedExperiment::assay(cds, "counts")
   expect_true(methods::is(counts, "MatrixDir"))
   block <- dense_block(counts)
   expect_identical(dim(block), c(5L, 5L))
   expect_true(all(is.finite(block)))
-  expect_identical(catalog_row("cds_bpcells_a")$loader_status, "registered")
+  expect_identical(catalog_row(first)$loader_status, "registered")
 
   expect_identical(snapshot_installed(), fixture_before)
+})
+
+test_that("deleting a saved directory from the test data source is repaired by reconciliation", {
+  pkg <- disposable_testdata_copy()
+  resources <- manifest_resources(pkg)
+  skip_if(length(resources) < 2L, "test data source has fewer than two registered resources")
+  gone <- resources[[1]]
+  unlink(file.path(pkg, "inst", "extdata", gone), recursive = TRUE)
+  placeholders <- file_state(file.path(pkg, "data"))
+  remaining <- file_state(file.path(pkg, "inst", "extdata"))
+
+  out <- run_write(pkg)
+
+  expect_identical(status_of(out$report, gone), "removed")
+  expect_identical(manifest_resources(pkg), setdiff(resources, gone))
+  expect_no_error(projectData::data_manifest_validate(manifest_file(pkg), root = pkg))
+  expect_identical(file_state(file.path(pkg, "data")), placeholders)
+  expect_identical(file_state(file.path(pkg, "inst", "extdata")), remaining)
+
+  manifest_before <- file_state(dirname(manifest_file(pkg)))
+  expect_false(attr(run_write(pkg)$report, "written"))
+  expect_identical(file_state(dirname(manifest_file(pkg))), manifest_before)
 })
