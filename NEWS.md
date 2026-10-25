@@ -6,6 +6,11 @@
   supported assays and common failure modes. The README links to it.
 * `knitr` and `rmarkdown` added to `Suggests`, with `VignetteBuilder: knitr`.
   No functions, arguments or loader behaviour changed.
+* Documentation only: the directory-tree illustrations in the help pages of
+  `save_monocle_cds()` and `write_monocle_manifest()` now use ASCII characters
+  (`|--`, `` `-- ``, `|`) instead of Unicode box-drawing characters, which
+  LaTeX could not typeset and which made the PDF reference manual fail to build
+  under `R CMD check --as-cran`.
 
 # projectData.monocle3 0.0.0.9008
 

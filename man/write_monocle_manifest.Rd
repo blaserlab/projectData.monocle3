@@ -31,15 +31,15 @@ once, here, and shipped with the package.
 
 
 \if{html}{\out{<div class="sourceCode">}}\preformatted{my.datapkg/
-├── DESCRIPTION
-├── data/
-│   ├── human_cds.rda        placeholder for human_cds
-│   └── ordinary_data.rda    ordinary dataset, ignored here
-└── inst/
-    ├── extdata/
-    │   └── human_cds/       from monocle3::save_monocle_objects()
-    └── projectData/
-        └── manifest.dcf     created or updated
+|-- DESCRIPTION
+|-- data/
+|   |-- human_cds.rda        placeholder for human_cds
+|   `-- ordinary_data.rda    ordinary dataset, ignored here
+`-- inst/
+    |-- extdata/
+    |   `-- human_cds/       from monocle3::save_monocle_objects()
+    `-- projectData/
+        `-- manifest.dcf     created or updated
 }\if{html}{\out{</div>}}
 
 Each directory directly below \verb{inst/extdata/} that

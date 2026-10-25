@@ -11,15 +11,15 @@
 #' @section Expected layout:
 #' ```
 #' my.datapkg/
-#' ├── DESCRIPTION
-#' ├── data/
-#' │   ├── human_cds.rda        placeholder for human_cds
-#' │   └── ordinary_data.rda    ordinary dataset, ignored here
-#' └── inst/
-#'     ├── extdata/
-#'     │   └── human_cds/       from monocle3::save_monocle_objects()
-#'     └── projectData/
-#'         └── manifest.dcf     created or updated
+#' |-- DESCRIPTION
+#' |-- data/
+#' |   |-- human_cds.rda        placeholder for human_cds
+#' |   `-- ordinary_data.rda    ordinary dataset, ignored here
+#' `-- inst/
+#'     |-- extdata/
+#'     |   `-- human_cds/       from monocle3::save_monocle_objects()
+#'     `-- projectData/
+#'         `-- manifest.dcf     created or updated
 #' ```
 #' Each directory directly below `inst/extdata/` that
 #' `monocle3::save_monocle_objects(archive_control = list(archive_type =

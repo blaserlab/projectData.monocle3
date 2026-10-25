@@ -7,13 +7,13 @@
 #'
 #' ```
 #' my.datapkg/
-#' ├── data/
-#' │   └── <name>.rda               placeholder (written here)
-#' └── inst/
-#'     ├── extdata/
-#'     │   └── <name>/              native Monocle 3 serialization (written here)
-#'     └── projectData/
-#'         └── manifest.dcf         entry for <name> (created or updated here)
+#' |-- data/
+#' |   `-- <name>.rda               placeholder (written here)
+#' `-- inst/
+#'     |-- extdata/
+#'     |   `-- <name>/              native Monocle 3 serialization (written here)
+#'     `-- projectData/
+#'         `-- manifest.dcf         entry for <name> (created or updated here)
 #' ```
 #'
 #' Nothing is written to the working directory, `R/data.R` is never edited, and

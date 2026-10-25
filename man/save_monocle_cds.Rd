@@ -31,13 +31,13 @@ package's loader:
 }
 \details{
 \if{html}{\out{<div class="sourceCode">}}\preformatted{my.datapkg/
-├── data/
-│   └── <name>.rda               placeholder (written here)
-└── inst/
-    ├── extdata/
-    │   └── <name>/              native Monocle 3 serialization (written here)
-    └── projectData/
-        └── manifest.dcf         entry for <name> (created or updated here)
+|-- data/
+|   `-- <name>.rda               placeholder (written here)
+`-- inst/
+    |-- extdata/
+    |   `-- <name>/              native Monocle 3 serialization (written here)
+    `-- projectData/
+        `-- manifest.dcf         entry for <name> (created or updated here)
 }\if{html}{\out{</div>}}
 
 Nothing is written to the working directory, \code{R/data.R} is never edited, and
