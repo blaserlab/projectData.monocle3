@@ -1,0 +1,342 @@
+---
+title: "Using Monocle 3 Data with projectData"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Using Monocle 3 Data with projectData}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+
+# The consumer demonstration below needs the optional Monocle packages and a
+# small fixture data package. It runs only where those are installed; the
+# remaining chunks are never evaluated.
+have_demo <- all(vapply(
+  c("projectData", "monocle3", "BPCells", "projectData.monocle3.testdata"),
+  requireNamespace, logical(1), quietly = TRUE
+))
+```
+
+# Why a specialised loader?
+
+A Monocle 3 `cell_data_set` (CDS) is an S4 object that bundles an expression
+matrix, cell and gene metadata, dimensionality reductions and nearest-neighbour
+indexes. For large experiments the counts are usually held as a
+[BPCells](https://github.com/bnprks/BPCells) on-disk matrix. Such a CDS cannot
+be shipped with `save()` or `saveRDS()`: the R object holds only a *reference*
+to a directory that other people do not have. Monocle's own
+`save_monocle_objects()` and `load_monocle_objects()` handle this properly by
+copying the matrix directory and restoring the object, which means that a data
+package needs special handling at both ends.
+
+Two packages divide the work:
+
+| `projectData` (core) | `projectData.monocle3` (this adapter) |
+|---|---|
+| Registers installed data packages and builds the catalog from metadata | Declares the loader `projectData.monocle3::cds` |
+| Resolves object names, attaches collections, handles conflicts | Checks a saved CDS directory is structurally valid (`validate`) |
+| Opens a resource lazily, on first access, and caches or retries it | Restores the CDS with Monocle (`open`) |
+| Allocates a private working directory for each opening | Puts the restored BPCells files in that directory |
+| Knows nothing about Monocle or BPCells | Provides the authoring functions for data package developers |
+
+This vignette covers the Monocle-specific parts only. The general adapter
+mechanism (loader contract, manifests, working directories) is described in
+`vignette("adapters", package = "projectData")`, and the basic use of
+`projectData` in `vignette("projectData", package = "projectData")`.
+
+The loader declaration can be inspected without Monocle installed:
+
+```{r loader}
+projectData.monocle3::projectData_loaders()
+```
+
+# Creating a data package that ships a CDS
+
+## Prerequisites
+
+Authoring needs `monocle3`, `BPCells` and `SummarizedExperiment` installed.
+Because the first two are not on CRAN, install them from GitHub:
+
+```{r install, eval = FALSE}
+pak::pak(c(
+  "blaserlab/projectData",
+  "bnprks/BPCells/r",
+  "cole-trapnell-lab/monocle3",
+  "blaserlab/projectData.monocle3"
+))
+```
+
+The chunks in this section are not evaluated, because they require a real CDS
+and write into a package source tree.
+
+## One call: `save_monocle_cds()`
+
+Work from an existing R package *source* directory (one that has a
+`DESCRIPTION`). Assuming `cds` is a `cell_data_set`:
+
+```{r save, eval = FALSE}
+projectData.monocle3::save_monocle_cds(
+  cds,
+  name = "cds_main_adults",
+  package_dir = ".",
+  overwrite = FALSE
+)
+```
+
+The `name` must be a syntactically valid R name. It becomes the saved directory,
+the placeholder, the manifest resource and the object users will access. The
+call creates three things:
+
+```
+data/cds_main_adults.rda                 placeholder
+inst/extdata/cds_main_adults/            native Monocle serialization
+inst/projectData/manifest.dcf            manifest entry
+```
+
+* **Packaged backing files.** `inst/extdata/cds_main_adults/` is written by
+  `monocle3::save_monocle_objects()` without a tar archive, so the BPCells
+  matrix directory and the Monocle index files are installed as ordinary files.
+  Counts that are already a BPCells `MatrixDir` are saved as they are.
+  In-memory counts (`dgCMatrix`, `dgTMatrix`) are converted automatically, on a
+  copy, so your `cds` is not modified. Dense matrices, `DelayedMatrix` and
+  HDF5-backed counts are rejected before anything is written.
+* **Placeholder.** `data/cds_main_adults.rda` is a small, classed character
+  vector. It exists so that `data()`, `R CMD check` and roxygen2 treat the
+  dataset conventionally. It is not the CDS; printing it explains that and tells
+  the reader how to get the real object.
+* **Manifest entry.** `inst/projectData/manifest.dcf` tells `projectData` which
+  loader to use. A generated entry looks like this (`Source` uses the
+  *installed* layout):
+
+```
+Resource: cds_main_adults
+Loader: projectData.monocle3::cds
+Source: extdata/cds_main_adults
+Objects: cds_main_adults
+AdapterPackage: projectData.monocle3
+RecordedClass: cell_data_set
+HelpTopic: cds_main_adults
+```
+
+The manifest takes precedence over the placeholder for the same name, so
+`projectData` resolves the resource through the loader. The function returns
+invisibly a list describing what was written (`directory`, `placeholder`,
+`manifest`, `manifest_status`, `replaced`, `removed_stale`).
+
+Saving is staged in a hidden directory inside the package root
+(`.projectData.monocle3-stage-*`), validated with the loader's own checks and
+only then moved into place; on failure the previous files are restored. An
+existing dataset is replaced only with `overwrite = TRUE`, and only if the
+existing files are a Monocle save and a recognised placeholder.
+
+## Finishing the package
+
+`save_monocle_cds()` never edits `R/data.R`. Document the dataset as you would
+any other, then document, install and declare the adapter as a dependency:
+
+```{r document, eval = FALSE}
+#' Adult bone marrow CDS
+#'
+#' @format A Monocle 3 `cell_data_set` with BPCells-backed counts.
+#' @details Access with `projectData::data_attach()`; see the package vignette.
+"cds_main_adults"
+```
+
+```{r install-pkg, eval = FALSE}
+devtools::document()
+devtools::install()
+```
+
+Add `projectData.monocle3` to the data package's `Suggests` (and to `Remotes`
+if it is not on a configured repository). Monocle and BPCells are needed by
+*users* only when the CDS is opened.
+
+## Registering directories saved by other means
+
+If you saved a directory yourself with
+`save_monocle_objects(cds, "inst/extdata/x", archive_control = list(archive_type = "none"))`
+and created a matching placeholder in `data/`, register it with
+`write_monocle_manifest()`:
+
+```{r manifest, eval = FALSE}
+projectData.monocle3::write_monocle_manifest(package_dir = ".")
+```
+
+The function reconciles the manifest with the directories and placeholders
+present: it adds or updates entries owned by this adapter, removes entries
+whose directory or placeholder has been deleted, and leaves entries of other
+adapters untouched. It never deletes saved directories or placeholders, and it
+prints a summary only when the manifest changes. `save_monocle_cds()` runs the
+same reconciliation. The lower-level details are in `?write_monocle_manifest`.
+
+# Using the data package
+
+## Registering and inspecting
+
+A user needs `projectData`, plus `monocle3` and `BPCells` to open the object.
+There is no `library(projectData.monocle3)`: the manifest names the adapter and
+`projectData` loads its namespace (without attaching it) the first time a CDS is
+requested.
+
+The examples below use the small fixture package
+`projectData.monocle3.testdata`; they are evaluated only if that package and the
+Monocle dependencies are installed. Substitute your own data package name.
+
+```{r attach, eval = have_demo}
+library(projectData)
+data_attach("projectData.monocle3.testdata")
+```
+
+Attaching registers the collection and reads metadata only. Nothing is opened:
+
+```{r catalog, eval = have_demo}
+as.data.frame(data_catalog())[, c("resource", "state", "storage", "loader_status")]
+```
+
+The CDS resources are `unopened`. Their `storage` reads `unknown` and
+`loader_status` is `unresolved` until the adapter has been loaded, which happens
+on first access; the catalog never loads an adapter itself.
+
+## Accessing the CDS
+
+```{r access, eval = have_demo}
+data_config(messages = FALSE)
+cds <- cds_bpcells_a
+class(cds)
+dim(cds)
+```
+
+The same object can be retrieved without attaching anything with
+`data_get("cds_bpcells_a", package = "projectData.monocle3.testdata")`. After
+the first access the resource is `ready` and cached; later accesses return the
+same restored object without reading the files again.
+
+```{r state, eval = have_demo}
+subset(as.data.frame(data_catalog()), resource == "cds_bpcells_a",
+       select = c(resource, state, storage, loader_status))
+```
+
+Do not use `data("cds_main_adults")` to obtain the CDS. That loads only the
+placeholder into the global environment, where it can *mask* the real object.
+If you did, remove it with `rm(cds_main_adults)` and use `data_attach()` as above.
+
+# Lazy restoration and disk-backed behaviour
+
+Restoration happens in two stages, both on first access only.
+
+1. **Validation** inspects the saved directory. It reads `file_index.rds` and
+   checks that the paths are contained in the directory and that every listed
+   file exists. It does not build the CDS or read matrix values, and it runs
+   before every uncached open.
+2. **Opening** calls `monocle3::load_monocle_objects()`. This rebuilds the CDS
+   (metadata, reductions, models) and *copies* the packaged BPCells directory
+   into the working directory, then points the CDS at that copy.
+
+Opening a CDS therefore does not read the expression matrix into memory. The
+`counts` assay stays a BPCells `MatrixDir` that streams data from disk when
+computation needs it:
+
+```{r matrix, eval = have_demo}
+counts <- SummarizedExperiment::assay(cds, "counts")
+class(counts)
+```
+
+The state `ready` in the catalog means that the loader returned, not that the
+data are in memory. "Disk-backed" also does not mean "RAM-free": the cell and
+gene metadata, reductions and any other assays are ordinary R objects in
+memory, and operations that densify or collect counts (for example
+`as(counts, "dgCMatrix")`) will load them.
+
+# Working directory and file lifetime
+
+`projectData` allocates a private working directory for each opening of a
+resource that needs one, by default under the session temporary directory. The
+adapter passes it to Monocle as the location for the restored BPCells files:
+
+```{r workdir, eval = have_demo}
+work <- file.path(tempdir(), "projectData-work")
+list.files(work, pattern = "tmp$", recursive = TRUE, include.dirs = TRUE)
+```
+
+The restored matrix directories sit below `projectData-work/<collection>/<resource>-<n>/`.
+
+What this means in practice:
+
+* The adapter never calls `setwd()` and never writes to your working directory
+  or to the installed package, which is treated as read-only.
+* Restored files live for the R session. Monocle removes them at exit with its
+  own hook; there is no persistent cache in this version, so every new session
+  copies the matrix again on first access.
+* The counts and the derived row-ordered copy belong to the working directory, so
+  the restored CDS does not depend on the installed package for them. The UMAP
+  nearest-neighbour index is the exception: it is memory-mapped from the
+  installed file. On Linux this keeps working if the package is removed while the
+  object is in use, but that is platform behaviour and not a guarantee. Do not
+  reinstall or modify a data package in place while a CDS from it is in use;
+  on Windows the file cannot be removed while it is mapped.
+* **Detaching does not delete anything.** `data_detach()` forgets the
+  collection and its cached objects, but it never removes, moves or closes the
+  backing files, so a CDS you kept in a variable continues to work:
+
+```{r detach, eval = have_demo}
+invisible(data_detach())
+dim(cds)
+nrow(data_collections())
+```
+
+  Accessing the name through `projectData` after detaching and re-attaching
+  opens the resource afresh and creates a new copy in a new working directory.
+  The old copy remains until the session ends. Backing files are not deleted
+  when objects are removed either, as another retained object may still use
+  them.
+
+# Supported contents and limitations
+
+**Assays.** The `counts` assay is the one that is stored on disk and restored
+as a BPCells matrix. Additional *in-memory* assays (for example `logcounts`) and
+*in-memory* alternative experiments (`SingleCellExperiment::altExp()`, such as
+ADT or CRISPR modalities, at any nesting depth) are stored with the CDS and
+survive a save and a load. This was tested with synthetic data; other
+`SingleCellExperiment` extensions are not assumed to be supported.
+
+**Independently disk-backed assays are refused.** Monocle stores a BPCells
+alternative assay only as a reference to its original directory, which would not
+exist for your users. `save_monocle_cds()` therefore stops *before writing
+anything*, with an error of class `projectData.monocle3_external_assay` listing
+each offender (for example `altExp 'ADT' / assay 'counts'`). Convert those
+assays to in-memory matrices or drop them. The adapter never does this itself,
+since it could need a lot of memory. `DelayedArray` assays are also refused.
+
+**Other limits.**
+
+* Exactly one CDS per resource, and the resource name is the object name.
+* HDF5-backed saves and CDS saved with in-memory counts are rejected by the
+  loader, which is declared disk-backed. A directory saved with
+  `save_monocle_objects()` must use `archive_type = "none"`.
+* `monocle3` and `BPCells` are `Suggests` only. Registering, cataloguing and
+  validating a resource work without them; opening a resource, and authoring,
+  need them and fail with a message naming the missing package.
+* Monocle functions on the restored CDS need `library(monocle3)`; the adapter
+  attaches Monocle only for the duration of the restoration and restores the
+  search path afterwards.
+* Tested on Linux with monocle3 1.4.27 and BPCells 0.3.0. Windows and macOS
+  have not yet been verified.
+
+## Common failure modes
+
+| Symptom | Likely cause and remedy |
+|---|---|
+| Error at open naming `monocle3` or `BPCells` | Optional dependency not installed; install it (see Prerequisites), then call `data_retry()` |
+| Validation error mentioning in-memory counts, HDF5 or `file_index.rds` | Directory was not saved by `save_monocle_cds()`/`save_monocle_objects()` with BPCells directory counts and no archive; re-save it |
+| `projectData.monocle3_external_assay` at save | A non-`counts` assay, or an altExp assay, is disk-backed; make it in-memory or remove it |
+| `projectData.monocle3_conflict` at save | Resource or object name already used by another adapter's manifest entry; choose another `name` |
+| `projectData.monocle3_manifest_error` | Existing manifest is unreadable or invalid; it is left untouched, so fix it by hand |
+| Access returns a character vector that prints instructions | The placeholder from `data()` masks the real object; `rm()` it and use `data_attach()` |
+| An opening failed once and keeps failing | Failures are cached by `projectData`; fix the cause, then `data_retry("<collection>")` |
+
+A failed `data_get(package = )` can leave the collection registered but not
+attached, so retry with `package =` again. See
+`vignette("adapters", package = "projectData")` for the semantics of failed and
+retried resources.

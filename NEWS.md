@@ -1,4 +1,13 @@
-# projectData.monocle3 (development)
+# projectData.monocle3 0.0.0.9009
+
+* New vignette, "Using Monocle 3 Data with projectData"
+  (`vignette("using-monocle3-data")`), covering the authoring and consumer
+  workflows, lazy restoration, working-directory and backing-file lifetime,
+  supported assays and common failure modes. The README links to it.
+* `knitr` and `rmarkdown` added to `Suggests`, with `VignetteBuilder: knitr`.
+  No functions, arguments or loader behaviour changed.
+
+# projectData.monocle3 0.0.0.9008
 
 * Test infrastructure only: `PDM3_INTEGRATION_TESTS=true` starts a documented
   full integration run in which missing or incompatible prerequisites

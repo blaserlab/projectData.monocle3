@@ -25,6 +25,11 @@ Current functionality:
   at save time because Monocle would store only a reference to files that are
   not part of the data package.
 
+A longer, task-oriented guide is in the vignette
+`vignette("using-monocle3-data", package = "projectData.monocle3")`
+(source: [vignettes/using-monocle3-data.Rmd](vignettes/using-monocle3-data.Rmd)).
+For the general adapter mechanism, see `vignette("adapters", package = "projectData")`.
+
 ## Installation
 
 None of the dependencies below are on CRAN. Install them from GitHub:
