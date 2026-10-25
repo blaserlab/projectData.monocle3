@@ -5,13 +5,11 @@
 
 source(system.file("examples", "fixtures.R", package = "projectData"), local = TRUE)
 
+# Skips when the Monocle stack is missing; an error (test failure) in a full
+# integration run, see helper-integration.R.
 skip_if_no_monocle <- function() {
-  skip_on_cran()
-  skip_if_not_installed("monocle3")
-  skip_if_not_installed("BPCells")
-  skip_if_not_installed("SingleCellExperiment")
-  skip_if_not_installed("SummarizedExperiment")
-  skip_if_not_installed("withr")
+  if (!integration_mode()) skip_on_cran()
+  integration_gate(dependency_problems(monocle_stack))
 }
 
 # Builds one saved CDS plus the values it was built from, in `dir`.
@@ -63,7 +61,7 @@ cds_fixtures <- function() {
   }
   fx <- fixture_cache$built
   if (is.null(fx$human) || is.null(fx$mouse)) {
-    skip("could not build a CDS fixture with the installed monocle3/BPCells")
+    integration_gate("could not build a CDS fixture with the installed monocle3/BPCells")
   }
   fx
 }

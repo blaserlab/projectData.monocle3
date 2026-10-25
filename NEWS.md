@@ -1,3 +1,17 @@
+# projectData.monocle3 (development)
+
+* Test infrastructure only: `PDM3_INTEGRATION_TESTS=true` starts a documented
+  full integration run in which missing or incompatible prerequisites
+  (`projectData.monocle3.testdata` 0.0.0.9004 and its structure, the Monocle
+  stack, `PDM3_TESTDATA_SOURCE` and its agreement with the installed fixtures)
+  fail instead of skipping. Ordinary runs keep their skips. No API changes.
+
+* `file_index.rds` validation is more defensive: `cds_object`, `file_format` and
+  `file_path` must be non-missing, non-empty character columns, duplicate paths
+  are rejected, and indexed paths are resolved (following symlinks) and must
+  stay inside the saved directory. Malformed indexes now give validation
+  messages instead of base R errors. No format, API or loader changes.
+
 # projectData.monocle3 0.0.0.9007
 
 * `save_monocle_cds()` now **errors** (class `projectData.monocle3_external_assay`,

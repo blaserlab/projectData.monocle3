@@ -1,28 +1,13 @@
 # End to end: generate a manifest for a disposable copy of the
 # projectData.monocle3.testdata source, install it into a temporary library
 # and use it through projectData. The source tree is found through the
-# PDM3_TESTDATA_SOURCE environment variable, or as a sibling directory of this
-# package; the test skips if neither exists. The installed copy of the fixture
-# package is never modified.
-
-testdata_source <- function() {
-  candidates <- c(
-    Sys.getenv("PDM3_TESTDATA_SOURCE", unset = NA),
-    file.path(dirname(normalizePath(test_path("..", ".."))), testdata_pkg)
-  )
-  for (path in candidates[!is.na(candidates)]) {
-    desc <- file.path(path, "DESCRIPTION")
-    if (file.exists(desc) && identical(read.dcf(desc, "Package")[[1]], testdata_pkg) &&
-        dir.exists(file.path(path, "inst", "extdata"))) {
-      return(normalizePath(path))
-    }
-  }
-  NULL
-}
+# PDM3_TESTDATA_SOURCE environment variable (ordinary runs also try a sibling
+# directory of this package and skip if neither exists; full integration runs
+# require the variable and fail without it, see helper-integration.R). The
+# installed copy of the fixture package is never modified.
 
 disposable_testdata_copy <- function(env = parent.frame()) {
-  src <- testdata_source()
-  if (is.null(src)) skip("projectData.monocle3.testdata source tree not available")
+  src <- require_testdata_source()
   root <- withr::local_tempdir(.local_envir = env)
   keep <- setdiff(list.files(src, all.files = TRUE, no.. = TRUE),
                   c(".git", ".Rproj.user", ".Rhistory", "library_catalogs"))
@@ -68,6 +53,10 @@ test_that("a generated manifest makes the test data package work through project
   )
   expect_true(file.exists(file.path(lib, testdata_pkg, "DESCRIPTION")),
               info = paste(installed, collapse = "\n"))
+  if (integration_mode()) {
+    expect_identical(as.character(utils::packageVersion(testdata_pkg, lib.loc = lib)),
+                     testdata_version)
+  }
   fixture_before <- snapshot_installed()
 
   local_testdata_session()
@@ -103,9 +92,14 @@ test_that("a generated manifest makes the test data package work through project
 })
 
 test_that("deleting a saved directory from the test data source is repaired by reconciliation", {
+  skip_if_no_testdata()
   pkg <- disposable_testdata_copy()
   resources <- manifest_resources(pkg)
-  skip_if(length(resources) < 2L, "test data source has fewer than two registered resources")
+  if (integration_mode()) {
+    expect_setequal(resources, testdata_cds)
+  } else {
+    skip_if(length(resources) < 2L, "test data source has fewer than two registered resources")
+  }
   gone <- resources[[1]]
   unlink(file.path(pkg, "inst", "extdata", gone), recursive = TRUE)
   placeholders <- file_state(file.path(pkg, "data"))

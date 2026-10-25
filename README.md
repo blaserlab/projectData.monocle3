@@ -295,7 +295,51 @@ devtools::test()   # integration tests need monocle3, BPCells, SingleCellExperim
 ```
 
 Tests build two small real CDS fixtures in a subprocess (about 20 seconds)
-and install them into throwaway libraries. The end-to-end manifest test copies
-the source of `projectData.monocle3.testdata` (found through the
-`PDM3_TESTDATA_SOURCE` environment variable, or as a sibling directory of this
-package) and skips if it is unavailable.
+and install them into throwaway libraries.
+
+### Ordinary and full integration runs
+
+By default (`PDM3_INTEGRATION_TESTS` unset or `false`) the integration tests
+are optional: they skip when `monocle3`, `BPCells` or the other Monocle
+packages are missing, when `projectData.monocle3.testdata` is not installed or
+lacks the fixture resources, and when its source tree is not found (the
+`PDM3_TESTDATA_SOURCE` environment variable, or a sibling directory of this
+package). This keeps `R CMD check` usable anywhere.
+
+Setting `PDM3_INTEGRATION_TESTS=true` requests a **full integration run**, in
+which none of those conditions may skip. A missing or incompatible
+prerequisite is raised as an error inside the test (class
+`projectData.monocle3_integration_prerequisite`), which testthat records as a
+failure, so the run fails and `Rscript` exits non-zero. The run requires:
+
+- `projectData` (>= 0.0.0.9005), `monocle3`, `BPCells`,
+  `SingleCellExperiment`, `SummarizedExperiment` and `withr`;
+- `projectData.monocle3.testdata` **0.0.0.9004** installed, with exactly the
+  resources `cds_bpcells_a`, `cds_bpcells_b`, `cds_multiassay` (each a saved
+  CDS directory), a manifest registering them with
+  `projectData.monocle3::cds`, and `data()` items for them and `ordinary_data`;
+- `PDM3_TESTDATA_SOURCE` pointing at the fixture source tree (no sibling
+  fallback), at that same version, with the same `inst/extdata` and
+  `inst/projectData` file contents as the installed package (checked by
+  checksum). The source-dependent tests install a disposable copy of it.
+
+Platform-specific skips (`skip_on_platform()`) remain, and their reason is
+labelled `[full integration: platform skip]` in the test summary. The test
+`full integration prerequisites are met` lists every unmet prerequisite at once.
+
+To run it in a clean R session, install the fixture package from its source
+tree and run the tests in a fresh process:
+
+``` sh
+export PDM3_INTEGRATION_TESTS=true
+export PDM3_TESTDATA_SOURCE=/path/to/projectData.monocle3.testdata   # at version 0.0.0.9004
+
+R CMD INSTALL "$PDM3_TESTDATA_SOURCE"
+Rscript -e 'devtools::test(reporter = "summary", stop_on_failure = TRUE)'
+
+# or, as an installed-package check
+R CMD build . && NOT_CRAN=true R CMD check projectData.monocle3_*.tar.gz
+```
+
+Check the reporter summary for skips: in a full run only platform skips
+should appear.
