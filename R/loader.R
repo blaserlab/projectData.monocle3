@@ -77,20 +77,34 @@ validate_monocle_cds <- function(descriptor, root, context) {
 }
 
 validate_file_index <- function(index, dir, src) {
+  idx <- paste0("'", src, "/file_index.rds'")
   if (!is.list(index) || !identical(index$save_function, "save_monocle_objects")) {
-    return(paste0("'", src, "/file_index.rds' was not written by ",
-                  "monocle3::save_monocle_objects()"))
+    return(paste0(idx, " was not written by monocle3::save_monocle_objects()"))
   }
   files <- index$files
   needed <- c("cds_object", "file_format", "file_path")
   if (!is.data.frame(files) || !all(needed %in% names(files)) || !nrow(files)) {
-    return(paste0("'", src, "/file_index.rds' does not list any saved files"))
+    return(paste0(idx, " does not list any saved files"))
+  }
+  # Column types and missing values are checked before any value is used in a
+  # conditional or path operation.
+  for (col in needed) {
+    x <- files[[col]]
+    if (!is.character(x)) {
+      return(paste0(idx, " column `", col, "` must be character, not <",
+                    class(x)[1L], ">"))
+    }
+    if (anyNA(x) || !all(nzchar(x))) {
+      return(paste0(idx, " column `", col, "` has missing or empty values"))
+    }
   }
   paths <- files$file_path
-  if (anyNA(paths) || any(!nzchar(paths)) || any(grepl("^(/|[A-Za-z]:|~)", paths)) ||
+  if (any(grepl("^(/|[A-Za-z]:|~)", paths)) ||
       any(vapply(strsplit(paths, "[/\\\\]"), function(p) any(p == ".."), NA))) {
-    return(paste0("'", src, "/file_index.rds' lists paths that are not relative to ",
-                  "the saved directory"))
+    return(paste0(idx, " lists paths that are not relative to the saved directory"))
+  }
+  if (anyDuplicated(paths)) {
+    return(paste0(idx, " lists the same file path more than once"))
   }
   cds_rows <- files$cds_object == "cds"
   if (sum(cds_rows) != 1L || !identical(files$file_format[cds_rows], "rds")) {
@@ -103,12 +117,28 @@ validate_file_index <- function(index, dir, src) {
                   "disk-backed CDS; convert the counts with ",
                   "monocle3::convert_counts_matrix() before saving"))
   }
-  missing <- paths[!file.exists(file.path(dir, paths))]
+  full <- file.path(dir, paths)
+  missing <- paths[!file.exists(full)]
   if (length(missing)) {
     return(paste0("'", src, "' is missing saved file(s): ",
                   paste(missing, collapse = ", ")))
   }
-  if (!dir.exists(file.path(dir, paths[mat_rows]))) {
+  # Symlinks may point anywhere, so compare resolved locations. `dir` is
+  # resolved too: a symlinked resource directory is legitimate, but nothing
+  # inside it may lead out of it.
+  real_dir <- normalizePath(dir, winslash = "/", mustWork = TRUE)
+  real <- normalizePath(full, winslash = "/", mustWork = TRUE)
+  prefix <- paste0(sub("/+$", "", real_dir), "/")
+  inside <- if (.Platform$OS.type == "windows") {
+    startsWith(tolower(real), tolower(prefix))
+  } else {
+    startsWith(real, prefix)
+  }
+  if (!all(inside)) {
+    return(paste0(idx, " lists path(s) that resolve outside the saved directory: ",
+                  paste(paths[!inside], collapse = ", ")))
+  }
+  if (!dir.exists(full[mat_rows])) {
     return(paste0("BPCells matrix '", paths[mat_rows], "' in '", src,
                   "' is not a directory"))
   }
