@@ -118,12 +118,47 @@ are not guaranteed to work.
 
 Before anything is written, the CDS, \code{name}, \code{package_dir}, installed
 dependencies, existing targets and the existing manifest are checked. Existing
-targets are replaced only with \code{overwrite = TRUE}; and then only a directory
-that is a saved Monocle directory (or empty) and a placeholder written by
-this package (or the historical \code{"This is a placeholder object."}). A
-\verb{data/<name>.rda} that holds anything else is never replaced. A name already
-used by a manifest entry of another loader, or declared as an object by
-another resource, is an error.
+targets are replaced only with \code{overwrite = TRUE}, and only when this package
+can show it wrote them. A directory that merely contains files named like a
+Monocle save (\code{file_index.rds}, \code{cds_object.rds}, \code{bpcells_matrix_dir}) is not
+thereby owned.
+
+An existing \verb{inst/extdata/<name>} is replaceable when at least two of these
+three independent pieces of evidence are present:
+\itemize{
+\item a \code{file_index.rds} that is a native Monocle index (written by
+\code{save_monocle_objects()}, with a well-formed file listing; the listed files
+need not all exist);
+\item a manifest entry for \verb{<name>} with this package's loader, whose \code{Source} and
+\code{Objects} agree with it;
+\item a recognized placeholder \verb{data/<name>.rda}, written by this package or the
+historical \code{"This is a placeholder object."}.
+}
+
+The directory must also hold nothing the evidence does not account for: only
+\code{file_index.rds} and the files it lists (or, when the index is unusable,
+\code{cds_object.rds} and \code{bpcells_matrix_dir}). The outcomes:\tabular{ll}{
+   Existing \verb{inst/extdata/<name>} \tab Result \cr
+   none (or only a recognized placeholder) \tab normal save \cr
+   valid or damaged, two or more kinds of evidence \tab replaced with \code{overwrite = TRUE}; error of class \code{projectData.monocle3_exists} (also \code{projectData.monocle3_damaged} when damaged) without \cr
+   native save, or marker files, with less evidence (for example a bare \code{bpcells_matrix_dir}, a malformed \code{file_index.rds}, or a save no manifest entry or placeholder claims) \tab error \code{projectData.monocle3_ambiguous_ownership}, with or without \code{overwrite} \cr
+   contains other files, or is a file \tab error \code{projectData.monocle3_not_owned} \cr
+   manifest entry of another loader \tab error \code{projectData.monocle3_conflict} \cr
+   empty directory \tab replaced with \code{overwrite = TRUE} (nothing can be lost) \cr
+}
+
+
+So a save made with this package whose manifest was deleted, or whose
+placeholder was removed, can still be replaced, and so can a damaged one (a
+deleted \code{cds_object.rds}) as long as two kinds of evidence remain. A manifest
+entry of this loader that disagrees with the directory is ambiguous. A
+\verb{data/<name>.rda} that holds anything other than a recognized placeholder is
+never replaced (\code{projectData.monocle3_placeholder_not_recognized}). A name
+already used by a manifest entry of another loader, or declared as an object by
+another resource, is an error. All of these errors are raised before any file
+is staged or written, and none of them suggests \code{overwrite = TRUE} as a remedy
+when ownership is not established; there is no \code{force} argument. Replacing a
+damaged resource reports what was replaced and why it was allowed.
 }
 
 \section{The manifest}{

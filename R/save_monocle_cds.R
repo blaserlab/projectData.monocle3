@@ -86,12 +86,46 @@
 #' @section Overwriting and failure:
 #' Before anything is written, the CDS, `name`, `package_dir`, installed
 #' dependencies, existing targets and the existing manifest are checked. Existing
-#' targets are replaced only with `overwrite = TRUE`; and then only a directory
-#' that is a saved Monocle directory (or empty) and a placeholder written by
-#' this package (or the historical `"This is a placeholder object."`). A
-#' `data/<name>.rda` that holds anything else is never replaced. A name already
-#' used by a manifest entry of another loader, or declared as an object by
-#' another resource, is an error.
+#' targets are replaced only with `overwrite = TRUE`, and only when this package
+#' can show it wrote them. A directory that merely contains files named like a
+#' Monocle save (`file_index.rds`, `cds_object.rds`, `bpcells_matrix_dir`) is not
+#' thereby owned.
+#'
+#' An existing `inst/extdata/<name>` is replaceable when at least two of these
+#' three independent pieces of evidence are present:
+#'
+#' * a `file_index.rds` that is a native Monocle index (written by
+#'   `save_monocle_objects()`, with a well-formed file listing; the listed files
+#'   need not all exist);
+#' * a manifest entry for `<name>` with this package's loader, whose `Source` and
+#'   `Objects` agree with it;
+#' * a recognized placeholder `data/<name>.rda`, written by this package or the
+#'   historical `"This is a placeholder object."`.
+#'
+#' The directory must also hold nothing the evidence does not account for: only
+#' `file_index.rds` and the files it lists (or, when the index is unusable,
+#' `cds_object.rds` and `bpcells_matrix_dir`). The outcomes:
+#'
+#' | Existing `inst/extdata/<name>` | Result |
+#' |---|---|
+#' | none (or only a recognized placeholder) | normal save |
+#' | valid or damaged, two or more kinds of evidence | replaced with `overwrite = TRUE`; error of class `projectData.monocle3_exists` (also `projectData.monocle3_damaged` when damaged) without |
+#' | native save, or marker files, with less evidence (for example a bare `bpcells_matrix_dir`, a malformed `file_index.rds`, or a save no manifest entry or placeholder claims) | error `projectData.monocle3_ambiguous_ownership`, with or without `overwrite` |
+#' | contains other files, or is a file | error `projectData.monocle3_not_owned` |
+#' | manifest entry of another loader | error `projectData.monocle3_conflict` |
+#' | empty directory | replaced with `overwrite = TRUE` (nothing can be lost) |
+#'
+#' So a save made with this package whose manifest was deleted, or whose
+#' placeholder was removed, can still be replaced, and so can a damaged one (a
+#' deleted `cds_object.rds`) as long as two kinds of evidence remain. A manifest
+#' entry of this loader that disagrees with the directory is ambiguous. A
+#' `data/<name>.rda` that holds anything other than a recognized placeholder is
+#' never replaced (`projectData.monocle3_placeholder_not_recognized`). A name
+#' already used by a manifest entry of another loader, or declared as an object by
+#' another resource, is an error. All of these errors are raised before any file
+#' is staged or written, and none of them suggests `overwrite = TRUE` as a remedy
+#' when ownership is not established; there is no `force` argument. Replacing a
+#' damaged resource reports what was replaced and why it was allowed.
 #'
 #' @section The manifest:
 #' The manifest is reconciled with the package exactly as by
@@ -181,7 +215,12 @@ save_monocle_cds <- function(cds, name, package_dir = ".", overwrite = FALSE) {
   root <- check_package_source(package_dir, call = call)
   package <- unname(read.dcf(file.path(root, "DESCRIPTION"), fields = "Package")[1L, 1L])
 
-  target <- check_save_targets(root, name, overwrite, fail)
+  # Read before the targets are judged: ownership of an existing directory
+  # depends on what the manifest says about it. Same reader, same errors, as the
+  # reconciliation below.
+  manifest <- manifest_path(root)
+  existing <- read_existing_manifest(manifest)
+  target <- check_save_targets(root, name, overwrite, fail, existing)
 
   representation <- counts_representation(cds)
   if (identical(representation$kind, "unsupported")) {
@@ -191,7 +230,6 @@ save_monocle_cds <- function(cds, name, package_dir = ".", overwrite = FALSE) {
          "convert these counts to one of those first. Nothing was written.")
   }
 
-  manifest <- manifest_path(root)
   # What the package will contain once this resource is in place.
   found <- discover_monocle_resources(root)
   found <- rbind(found[found$resource != name, , drop = FALSE], data.frame(
@@ -273,6 +311,10 @@ save_monocle_cds <- function(cds, name, package_dir = ".", overwrite = FALSE) {
   }
 
   report_manifest_changes(outcome$plan, outcome$written, warn = FALSE, except = name)
+  if (identical(target$state, "damaged")) {
+    message("The previous '", name, "' was damaged (", target$reason, "); it was replaced. ",
+            "Ownership was established by: ", paste(target$evidence, collapse = ", "), ".")
+  }
   report_save(root, name, package, outcome$manifest_status, target$replaced)
   invisible(list(
     name = name,
@@ -287,17 +329,12 @@ save_monocle_cds <- function(cds, name, package_dir = ".", overwrite = FALSE) {
 }
 
 # Looks at what already exists for `name`; refuses anything that may not be
-# replaced, and anything at all when `overwrite` is FALSE.
-check_save_targets <- function(root, name, overwrite, fail) {
+# replaced (see resource_ownership() for who may be replaced), and anything at
+# all when `overwrite` is FALSE. Runs before anything is staged or written.
+# `existing` is the manifest as read by read_existing_manifest().
+check_save_targets <- function(root, name, overwrite, fail, existing = list()) {
   dest <- file.path(root, "inst", "extdata", name)
   has_cds <- file.exists(dest)
-  if (has_cds) {
-    empty_dir <- dir.exists(dest) && !length(list.files(dest, all.files = TRUE, no.. = TRUE))
-    if (!dir.exists(dest) || !(empty_dir || looks_like_monocle_save(dest))) {
-      fail("'inst/extdata/", name, "' exists but is not a saved Monocle directory, ",
-           "so it will not be replaced.")
-    }
-  }
   candidates <- file.path(root, "data", paste0(name, ".", rda_extensions))
   candidates <- candidates[file.exists(candidates)]
   for (path in candidates) {
@@ -305,18 +342,42 @@ check_save_targets <- function(root, name, overwrite, fail) {
     ok <- isTRUE(info$readable) && identical(info$names, name) && isTRUE(info$single) &&
       is_recognized_placeholder(info, name)
     if (!ok) {
-      fail("'data/", basename(path), "' does not hold a CDS placeholder (it may be a ",
-           "real dataset), so it will not be replaced.")
+      fail("'data/", basename(path), "' does not hold a CDS placeholder written by this ",
+           "package (it may be a real dataset), so it will not be replaced. Nothing was ",
+           "written. Choose another `name`, or move that file yourself if it is no ",
+           "longer needed.", class = "projectData.monocle3_placeholder_not_recognized")
+    }
+  }
+  verdict <- list(state = "none", reason = NA_character_, evidence = character())
+  if (has_cds) {
+    verdict <- resource_ownership(root, name, existing, has_placeholder = length(candidates) > 0L)
+    if (!verdict$owned) {
+      fail(ownership_message(name, verdict), class = verdict$class)
     }
   }
   if ((has_cds || length(candidates)) && !overwrite) {
     found <- c(if (has_cds) paste0("inst/extdata/", name),
                if (length(candidates)) paste0("data/", basename(candidates)))
-    fail("'", name, "' already exists in this package (", paste(found, collapse = ", "),
-         "). Use `overwrite = TRUE` to replace it.")
+    damaged <- identical(verdict$state, "damaged")
+    fail("'", name, "' already exists in this package (", paste(found, collapse = ", "), ")",
+         if (damaged) paste0(" and is damaged (", verdict$reason, "), but this package can ",
+                             "show it wrote it (", paste(verdict$evidence, collapse = ", "), ")"),
+         ". Use `overwrite = TRUE` to replace it.",
+         class = c(if (damaged) "projectData.monocle3_damaged", "projectData.monocle3_exists"))
   }
   list(cds = if (has_cds) dest, placeholders = candidates,
-       replaced = has_cds || length(candidates) > 0L)
+       replaced = has_cds || length(candidates) > 0L,
+       state = verdict$state, reason = verdict$reason, evidence = verdict$evidence)
+}
+
+# Deliberately does not suggest `overwrite = TRUE`: ownership is not established.
+ownership_message <- function(name, verdict) {
+  paste0(
+    "'inst/extdata/", name, "' exists but this package cannot show that it wrote it (",
+    verdict$reason, "), so it will not be replaced, with or without `overwrite`. Nothing ",
+    "was written. Choose another `name`, or move or delete that directory yourself if it ",
+    "is not needed: this package never deletes what it cannot show it wrote."
+  )
 }
 
 # Finds assays whose matrix lives outside the object and that Monocle's

@@ -77,6 +77,31 @@ validate_monocle_cds <- function(descriptor, root, context) {
 }
 
 validate_file_index <- function(index, dir, src) {
+  problem <- file_index_listing_problem(index, src)
+  if (!is.null(problem)) {
+    return(problem)
+  }
+  files <- index$files
+  paths <- files$file_path
+  cds_rows <- files$cds_object == "cds"
+  if (sum(cds_rows) != 1L || !identical(files$file_format[cds_rows], "rds")) {
+    return(paste0("'", src, "' must hold exactly one CDS saved in rds format ",
+                  "(hdf5_assays = TRUE is not supported)"))
+  }
+  mat_rows <- files$cds_object == "bpcells_matrix_dir"
+  if (sum(mat_rows) != 1L) {
+    return(paste0("'", src, "' has no BPCells matrix directory, so it is not a ",
+                  "disk-backed CDS; convert the counts with ",
+                  "monocle3::convert_counts_matrix() before saving"))
+  }
+  validate_saved_files(files, dir, src, mat_rows)
+}
+
+# The part of the index check that concerns the index alone: a native Monocle
+# index with a well-formed, contained, duplicate-free file listing. No file
+# system access and no judgement of what the loader supports. Returns NULL or a
+# message. Also used to recognize a native save when deciding ownership.
+file_index_listing_problem <- function(index, src) {
   idx <- paste0("'", src, "/file_index.rds'")
   if (!is.list(index) || !identical(index$save_function, "save_monocle_objects")) {
     return(paste0(idx, " was not written by monocle3::save_monocle_objects()"))
@@ -106,17 +131,13 @@ validate_file_index <- function(index, dir, src) {
   if (anyDuplicated(paths)) {
     return(paste0(idx, " lists the same file path more than once"))
   }
-  cds_rows <- files$cds_object == "cds"
-  if (sum(cds_rows) != 1L || !identical(files$file_format[cds_rows], "rds")) {
-    return(paste0("'", src, "' must hold exactly one CDS saved in rds format ",
-                  "(hdf5_assays = TRUE is not supported)"))
-  }
-  mat_rows <- files$cds_object == "bpcells_matrix_dir"
-  if (sum(mat_rows) != 1L) {
-    return(paste0("'", src, "' has no BPCells matrix directory, so it is not a ",
-                  "disk-backed CDS; convert the counts with ",
-                  "monocle3::convert_counts_matrix() before saving"))
-  }
+  NULL
+}
+
+# Checks the saved files against the (already well-formed) listing.
+validate_saved_files <- function(files, dir, src, mat_rows) {
+  idx <- paste0("'", src, "/file_index.rds'")
+  paths <- files$file_path
   full <- file.path(dir, paths)
   missing <- paths[!file.exists(full)]
   if (length(missing)) {

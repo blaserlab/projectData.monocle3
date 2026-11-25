@@ -1,3 +1,21 @@
+# projectData.monocle3 0.0.0.9010
+
+* Stricter overwrite authorization in `save_monocle_cds()`. Previously an
+  existing `inst/extdata/<name>` was replaceable with `overwrite = TRUE` if it
+  held any one of `file_index.rds`, `cds_object.rds` or `bpcells_matrix_dir`
+  (or was empty); these names only identify a *candidate*. Now at least two of
+  a native Monocle file index, a manifest entry of this loader and a recognized
+  placeholder are required, nothing unaccounted for may be in the directory, and
+  a manifest entry of another loader (or one that disagrees with the directory)
+  always refuses. Damaged saves are recoverable when that evidence exists. The
+  manifest is read before the targets are judged, and every refusal happens
+  before anything is staged. New error classes (all also
+  `projectData.monocle3_save_error`): `_exists`, `_damaged`, `_not_owned`,
+  `_ambiguous_ownership`, `_placeholder_not_recognized`; `_conflict` now also
+  covers an existing directory. Resources made by earlier versions keep working
+  (classed or historical placeholder, with or without a manifest entry). No
+  change to the signature, return value, serialization or loader.
+
 # projectData.monocle3 0.0.0.9009
 
 * New vignette, "Using Monocle 3 Data with projectData"

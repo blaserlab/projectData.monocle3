@@ -128,8 +128,10 @@ invisibly a list describing what was written (`directory`, `placeholder`,
 Saving is staged in a hidden directory inside the package root
 (`.projectData.monocle3-stage-*`), validated with the loader's own checks and
 only then moved into place; on failure the previous files are restored. An
-existing dataset is replaced only with `overwrite = TRUE`, and only if the
-existing files are a Monocle save and a recognised placeholder.
+existing dataset is replaced only with `overwrite = TRUE`, and only if this
+package can show that it wrote the existing directory (see the "Overwriting and
+failure" section of `?save_monocle_cds`). A directory that merely looks like a
+Monocle save is never replaced.
 
 ## Finishing the package
 

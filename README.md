@@ -142,8 +142,13 @@ Points to know:
 * The manifest is reconciled with the package on every save (see below):
   entries whose saved directory or placeholder was deleted are removed.
 * An existing dataset or placeholder is replaced only with `overwrite = TRUE`,
-  and a `data/<name>.rda` that holds anything other than a placeholder is never
-  replaced. Files are built in a hidden staging directory
+  and only if this package can show it wrote the existing directory: a native
+  Monocle file index, a manifest entry of this loader or a recognized
+  placeholder, at least two of the three, with nothing else in the directory. A
+  directory that merely contains a file named like a Monocle save, a directory
+  that another loader's manifest entry claims, and a `data/<name>.rda` that
+  holds anything other than a placeholder are never replaced (see
+  `?save_monocle_cds`). Files are built in a hidden staging directory
   (`.projectData.monocle3-stage-*`), checked with the loader's own validation, and
   only then moved into place; if that fails the previous files are restored. It
   is not a filesystem transaction (a crash can leave the staging directory
