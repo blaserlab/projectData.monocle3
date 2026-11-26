@@ -107,10 +107,20 @@ looks_like_monocle_save <- function(dir) {
 
 rda_extensions <- c("rda", "RData", "rdata")
 
+# Existing placeholder files for `name`, judged by the names in the directory
+# listing rather than file.exists(): on a case-insensitive file system (macOS,
+# Windows) `x.RData` and `x.rdata` are the same file and file.exists() would
+# report both. Dangling links are listed too. Returns full paths.
+rda_candidates <- function(data_dir, name) {
+  wanted <- paste0(name, ".", rda_extensions)
+  present <- if (dir.exists(data_dir)) list.files(data_dir, all.files = TRUE, no.. = TRUE) else character()
+  found <- wanted[wanted %in% present]
+  if (length(found)) file.path(data_dir, found) else character()
+}
+
 match_placeholder <- function(root, name, row) {
   data_dir <- file.path(root, "data")
-  candidates <- file.path(data_dir, paste0(name, ".", rda_extensions))
-  candidates <- candidates[file.exists(candidates)]
+  candidates <- rda_candidates(data_dir, name)
   if (!length(candidates)) {
     return(row("no_placeholder", paste0(
       "no data/", name, ".rda placeholder; create one before registering the resource")))

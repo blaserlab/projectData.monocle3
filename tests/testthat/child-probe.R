@@ -72,7 +72,7 @@ probe_load <- function(args) {
   if (!is.null(args$adapter_path)) pkgload::load_all(args$adapter_path, quiet = TRUE)
   cwd_before <- getwd()
   search_before <- search()
-  work_root <- normalizePath(file.path(tempdir(), "projectData-work"), winslash = "/", mustWork = FALSE)
+  work_root <- file.path(tempdir(), "projectData-work")
   installed <- file.path(args$lib, args$pkg)
   checksums_before <- tree_checksums(installed)
 
@@ -110,7 +110,9 @@ probe_load <- function(args) {
       lapply(p, normalizePath, winslash = "/", mustWork = FALSE)
     }),
     installed = normalizePath(installed, winslash = "/"),
-    work_root = work_root,
+    # resolved now that the directory exists (macOS /var -> /private/var, Windows
+    # 8.3 names); the paths above were resolved the same way
+    work_root = normalizePath(work_root, winslash = "/", mustWork = FALSE),
     catalog_before = catalog_before,
     catalog_opened = catalog_opened,
     work_after_attach = work_after_attach,

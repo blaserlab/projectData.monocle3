@@ -158,8 +158,30 @@ remove_tree <- function(path, within = NULL) {
 }
 
 # The only renaming primitive of the commit, so that tests can inject failures.
+# Returns TRUE or FALSE; on failure the reason R reported (the operating system's
+# message) is in attr(, "reason"). On Windows a directory cannot be renamed while
+# any file in it is open, and BPCells keeps files open until the R object that
+# holds them is garbage collected, so a failed move is retried after gc().
 move_path <- function(from, to) {
-  suppressWarnings(file.rename(from, to))
+  reason <- character()
+  attempt <- function() {
+    withCallingHandlers(
+      isTRUE(file.rename(from, to)),
+      warning = function(w) {
+        reason <<- conditionMessage(w)
+        invokeRestart("muffleWarning")
+      }
+    )
+  }
+  ok <- attempt()
+  if (!ok && .Platform$OS.type == "windows") {
+    for (i in 1:3) {
+      gc()
+      Sys.sleep(0.2)
+      if (ok <- attempt()) break
+    }
+  }
+  structure(ok, reason = if (!ok) reason)
 }
 
 # Creates `path` as a new directory that did not exist (dir.create() never

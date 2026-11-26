@@ -15,6 +15,11 @@ the public API, the serialization format or the loader contract.
   pinned commit of `projectData.monocle3.testdata`, and an allowed-failure job
   against BPCells main. **No workflow has run yet:** see the README compatibility
   table for what has actually been verified.
+* **Platform fixes found by the first CI runs:** placeholders are matched by
+  directory listing (`x.rdata` was counted twice on case-insensitive file
+  systems, so a valid placeholder was rejected as ambiguous on macOS and
+  Windows: a production fix); `move_path()` reports the operating system's
+  reason and retries after `gc()` on Windows (unconfirmed, see AGENTS.md).
 * **Tools:** `tools/compat-matrix.R` (strict run per configuration; a declared
   version mismatch, a failure or an unlabelled skip fails it), `tools/compat-libs.R`
   (builds the alternative libraries), `tools/verify-stack.R`,

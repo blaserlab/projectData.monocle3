@@ -637,9 +637,10 @@ test_that("14: when restoring also fails, the backup is kept and named", {
                       "Restoring the previous files also failed; they are kept in")
   stage <- stage_dirs(pkg)
   expect_length(stage, 1L)
-  backup <- file.path(pkg, stage, "backup")
-  expect_match(conditionMessage(err), backup, fixed = TRUE)
-  kept <- file.path(backup, "1_ds", "file_index.rds")
+  # The message holds the resolved path (macOS /private/var, Windows long names),
+  # so only the stage directory name and backup folder are compared.
+  expect_match(conditionMessage(err), file.path(stage, "backup"), fixed = TRUE)
+  kept <- file.path(pkg, stage, "backup", "1_ds", "file_index.rds")
   expect_true(file.exists(kept))
   expect_identical(unname(tools::md5sum(kept)), unname(old_index))
 })

@@ -152,6 +152,17 @@ test_that(".RData and .rdata placeholders also match", {
   }
 })
 
+test_that("placeholder candidates come from the directory listing, so one file is never counted twice", {
+  # On a case-insensitive file system file.exists("x.RData") and
+  # file.exists("x.rdata") are both TRUE for one file; the listing is exact.
+  dir <- withr::local_tempdir()
+  file.create(file.path(dir, c("a.rdata", "b.rda", "b.RData", "c.txt")))
+  expect_identical(basename(rda_candidates(dir, "a")), "a.rdata")
+  expect_identical(sort(basename(rda_candidates(dir, "b"))), c("b.RData", "b.rda"))
+  expect_identical(rda_candidates(dir, "c"), character())
+  expect_identical(rda_candidates(file.path(dir, "absent"), "a"), character())
+})
+
 test_that("an unreadable or ambiguous placeholder is reported, never accepted", {
   pkg <- new_pkg_source()
   for (nm in c("garbage", "empty", "ambiguous")) add_fake_cds(pkg, nm)

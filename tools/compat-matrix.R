@@ -123,8 +123,11 @@ run_config <- function(name) {
   )
   found <- res$versions[names(cfg$expect)]
   wrong <- names(cfg$expect)[!startsWith(found, cfg$expect)]
-  skips <- as.character(res$skips)
-  unexpected <- skips[!startsWith(skips, platform_skip_prefix)]
+  # testthat reports a skip as "Reason: <message>".
+  skips <- sub("^Reason: ", "", as.character(res$skips))
+  # Without --historical the historical fixture tests skip by design.
+  allowed <- c(platform_skip_prefix, if (!historical) "[historical fixtures]")
+  unexpected <- skips[!vapply(skips, function(s) any(startsWith(s, allowed)), NA)]
   status <- if (res$failed > 0 || res$errors > 0 || length(wrong)) {
     "FAILED"
   } else if (res$skipped > 0 && length(unexpected) > 0) {

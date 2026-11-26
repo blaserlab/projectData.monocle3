@@ -373,8 +373,7 @@ check_save_targets <- function(root, name, overwrite, fail, existing = list()) {
   # discard it, so it is judged (and refused) like any other target.
   exists <- function(p) file.exists(p) | is_symlink(p)
   has_cds <- exists(dest)
-  candidates <- file.path(root, "data", paste0(name, ".", rda_extensions))
-  candidates <- candidates[exists(candidates)]
+  candidates <- rda_candidates(file.path(root, "data"), name)
   for (path in candidates) {
     info <- inspect_rda(path)
     ok <- isTRUE(info$readable) && identical(info$names, name) && isTRUE(info$single) &&
@@ -620,8 +619,13 @@ commit_staged_resource <- function(root, stage, name, manifest, staged_cds,
     }
   }
   move <- function(from, to) {
-    if (!isTRUE(move_path(from, to))) {
-      stop("could not move '", from, "' to '", to, "'", call. = FALSE)
+    res <- move_path(from, to)
+    if (!isTRUE(res)) {
+      why <- attr(res, "reason")
+      stop("could not move '", from, "' to '", to, "'",
+           if (length(why) && nzchar(why[[1]])) paste0(" (", why[[1]], ")"),
+           " [source exists: ", file.exists(from), ", destination folder exists: ",
+           dir.exists(dirname(to)), "]", call. = FALSE)
     }
   }
   restore <- function() {
