@@ -114,7 +114,7 @@ run_config <- function(name) {
         errors = sum(df$error), skipped = sum(df$skipped), warnings = sum(df$warning),
         skips = collect("expectation_skip", function(f, x) conditionMessage(x)),
         problems = collect(c("expectation_failure", "expectation_error"), function(f, x) {
-          paste0(f$test, ": ", substr(gsub("\\s+", " ", conditionMessage(x)), 1, 300))
+          paste0(f$test, ": ", substr(gsub("\\s+", " ", conditionMessage(x)), 1, 1500))
         })
       )
     },
