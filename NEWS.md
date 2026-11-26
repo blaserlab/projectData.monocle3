@@ -1,3 +1,50 @@
+# projectData.monocle3 0.0.0.9011
+
+Filesystem and symbolic-link safety. No change to the serializer, the resource
+layout, the loader contract, the public signatures, manifest reconciliation or
+the overwrite ownership rule; resources written by earlier versions keep
+working.
+
+* Confirmed risks: monocle3 and BPCells follow symbolic links when they copy a
+  matrix directory (verified on load and, through `write_matrix_dir()`, on
+  save) and never complain about links that leave the directory, so a link in an
+  author's counts directory or in an installed resource would put the bytes of
+  an unrelated file into the data package or into the work directory.
+  `list.files(recursive = TRUE)`, used by the ownership check, also follows link
+  cycles.
+* One rule, in the new `R/filesystem.R`, shared by `validate`, `open`,
+  authoring and ownership: nothing inside a saved Monocle directory or an
+  external BPCells directory may be a symbolic link (internal, escaping or
+  dangling), and a BPCells directory must be flat, with the files BPCells
+  writes. Trees are walked without following links and with a bound on the
+  number of entries. The directory a path starts from, the library, and parents
+  such as `inst/extdata` may be symbolic links.
+* **Behavior change:** the loader previously accepted a link that stayed inside
+  the resource; it now refuses all links inside a resource (a resource written
+  by `save_monocle_cds()` never has one). `validate` also now requires the
+  listed BPCells directory to hold the files BPCells writes (previously an empty
+  directory passed), requires listed non-matrix paths to be files, and rejects a
+  manifest `Source` that is absolute or contains `..`.
+* `file_index.rds` path rules now use the same `is_plain_relative()` as
+  everything else; the earlier inline copy accepted UNC paths such as
+  `\\server\share`.
+* `save_monocle_cds()` judges the author's counts directory before staging
+  anything and refuses it with `projectData.monocle3_unsafe_backing` (a missing
+  directory, which Monocle would only warn about, is now caught here too). A
+  symbolic link (or dangling link) in place of `inst/extdata/<name>` or of the
+  placeholder, or a link anywhere inside an existing `inst/extdata/<name>`, is
+  refused (`projectData.monocle3_not_owned`) before anything is written.
+* The staging directory is created exclusively, checked to lie in the package,
+  and removed only if this call created it, without following links.
+  `open_monocle_cds()` repeats the directory check and refuses a work directory
+  inside the installed resource. A dangling placeholder link no longer emits a
+  gzfile warning from `inspect_rda()`.
+* Tests: `test-filesystem.R` (synthetic trees and real fixtures; symbolic
+  links, containment, entry types, spaces and non-ASCII paths, symlinked
+  libraries, commit failure and failed restore, retained objects, two resources
+  loaded from a read-only symlinked library). `helper-authoring.R` fake saves now
+  contain a BPCells-looking directory.
+
 # projectData.monocle3 0.0.0.9010
 
 * Stricter overwrite authorization in `save_monocle_cds()`. Previously an

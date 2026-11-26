@@ -22,6 +22,16 @@ fake_files <- function() {
   )
 }
 
+# The files a BPCells matrix directory has (contents are never read here).
+fake_matrix_files <- c("version", "storage_order", "shape", "row_names", "col_names",
+                       "idxptr", "index", "val")
+
+make_fake_matrix_dir <- function(path) {
+  dir.create(path, showWarnings = FALSE, recursive = TRUE)
+  for (f in fake_matrix_files) writeLines("x", file.path(path, f))
+  invisible(path)
+}
+
 # A directory shaped like the output of save_monocle_objects().
 add_fake_cds <- function(pkg, name, files = fake_files(), index = TRUE,
                          save_function = "save_monocle_objects", create = TRUE) {
@@ -35,7 +45,7 @@ add_fake_cds <- function(pkg, name, files = fake_files(), index = TRUE,
     for (p in files$file_path) {
       path <- file.path(dir, p)
       if (identical(files$cds_object[files$file_path == p], "bpcells_matrix_dir")) {
-        dir.create(path, showWarnings = FALSE)
+        make_fake_matrix_dir(path)
       } else {
         writeLines("x", path)
       }

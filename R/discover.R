@@ -202,7 +202,7 @@ inspect_rda <- function(path, max_chars = 4096L, max_strings = 16L) {
     stop(structure(class = c("rda_unsupported", "error", "condition"),
                    list(message = why, call = NULL)))
   }
-  con <- tryCatch(gzfile(path, "rb"), error = function(e) NULL)
+  con <- tryCatch(suppressWarnings(gzfile(path, "rb")), error = function(e) NULL)
   if (is.null(con)) {
     return(list(readable = FALSE, reason = "file cannot be opened"))
   }

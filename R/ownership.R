@@ -24,7 +24,9 @@
 # Refused whatever the evidence: a manifest entry of another loader for the name,
 # a manifest entry of this loader that disagrees with the directory, entries that
 # neither the index nor the three names Monocle always writes (file_index.rds,
-# cds_object.rds, bpcells_matrix_dir) account for, and a non-directory.
+# cds_object.rds, bpcells_matrix_dir) account for, a non-directory, and a symbolic
+# link in place of the directory or anywhere inside it (this package never writes
+# links, so it cannot show it owns what they lead to).
 #
 # An empty directory is replaceable (state "empty"): it holds nothing that could
 # be lost, and it is what is left when a previous save was interrupted. It is
@@ -44,6 +46,12 @@ resource_ownership <- function(root, name, existing, has_placeholder) {
     result(FALSE, "refused", reason, class, evidence)
   }
 
+  # A link in place of the directory is refused whatever it points to: renaming
+  # it aside would work, but this package never wrote a link, so it cannot show
+  # that it owns the target. (Links in *parents* such as inst/extdata are fine.)
+  if (is_symlink(dest)) {
+    return(refuse(if (!dir.exists(dest)) "it is a dangling symbolic link" else "it is a symbolic link"))
+  }
   if (!dir.exists(dest)) {
     return(refuse("it is not a directory"))
   }
@@ -62,10 +70,16 @@ resource_ownership <- function(root, name, existing, has_placeholder) {
                   class = "projectData.monocle3_ambiguous_ownership"))
   }
 
-  entries <- list.files(dest, recursive = TRUE, all.files = TRUE, include.dirs = TRUE,
-                        no.. = TRUE)
-  if (!length(entries)) {
+  # Walked without following links (no cycles, nothing outside is read).
+  entries <- tree_entries(dest)
+  if (!nrow(entries)) {
     return(result(TRUE, "empty"))
+  }
+  unsafe <- c(if (isTRUE(attr(entries, "truncated"))) "it holds an unreasonable number of entries",
+              entry_problems(dest, entries))
+  if (length(unsafe)) {
+    return(refuse(paste0("it contains entries this package never writes: ",
+                         paste(unsafe, collapse = "; "))))
   }
 
   index <- read_native_index(dest, name)

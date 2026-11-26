@@ -30,6 +30,20 @@ directory with \code{matrix_control$matrix_path} set to the unique
 the single CDS.
 }
 }
+\section{Filesystem safety}{
+
+monocle3 and BPCells copy the matrix directory by following whatever is
+inside it, so the loader refuses a resource before the native load when
+anything inside the saved directory is a symbolic link (internal, escaping or
+dangling), when an indexed path is absolute, uses \code{..}, or is of the wrong
+type, or when the BPCells directory is not flat or lacks the files BPCells
+writes. The directory itself, and the library it lives in, may be reached
+through symbolic links. The same check runs in \code{validate} and again in \code{open}
+(a listing of about ten entries; no matrix data is read), and \code{open} refuses a
+work directory that lies inside the installed resource. Resources written by
+\code{\link[=save_monocle_cds]{save_monocle_cds()}} never contain links.
+}
+
 \section{What the restored object references}{
 
 Monocle copies the BPCells matrix directory (and a second, row-ordered copy

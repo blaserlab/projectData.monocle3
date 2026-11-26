@@ -282,6 +282,21 @@ Verified with monocle3 1.4.27 and BPCells 0.3.0:
   You will still need `library(monocle3)` to use monocle3 functions on the
   result.
 
+### Symbolic links
+
+monocle3 and BPCells follow symbolic links when they copy a matrix directory
+and do not check where a link leads, so this package refuses them instead. The
+loader refuses a resource in which anything inside the saved directory is a
+symbolic link (internal, escaping or dangling), whose BPCells directory is not
+flat or lacks the files BPCells writes, or whose index lists an absolute path, a
+`..` path or a directory where a file is expected. `save_monocle_cds()` applies
+the same rule to your original counts directory before it stages anything (error
+class `projectData.monocle3_unsafe_backing`) and never replaces a resource that
+is, or contains, a link. The library, the package directory and parents such as
+`inst/extdata` may themselves be symbolic links. Resources written by
+`save_monocle_cds()` never contain links. Base R cannot tell a FIFO or device
+file from a regular file, so those are not detected.
+
 ### Independence from the installed package
 
 The restored counts and the row-ordered copy live under `work_dir`, so

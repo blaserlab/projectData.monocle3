@@ -26,7 +26,7 @@ local_saved_dir <- function(env = parent.frame()) {
   write_index(dir, good_files())
   writeLines("x", file.path(dir, "cds_object.rds"))
   writeLines("x", file.path(dir, "umap.idx"))
-  dir.create(file.path(dir, "bpcells_matrix_dir"))
+  make_fake_matrix_dir(file.path(dir, "bpcells_matrix_dir"))
   root
 }
 
@@ -141,50 +141,4 @@ test_that("invalid CDS entries fail without incidental errors", {
   expect_match(msg(root), "not written by")
 })
 
-test_that("indexed symlinks that escape the resource directory are rejected", {
-  skip_if_not_installed("withr")
-  skip_on_platform("windows", "needs POSIX symlinks")
-  msg <- function(root) validate_monocle_cds(descriptor(), root, list())
-  link <- function(target, from) {
-    skip_if_not(isTRUE(file.symlink(target, from)), "symlinks unsupported")
-  }
-
-  root <- local_saved_dir()
-  dir <- file.path(root, "extdata", "cds")
-  outside <- withr::local_tempfile()
-  writeLines("secret", outside)
-  unlink(file.path(dir, "umap.idx"))
-  link(outside, file.path(dir, "umap.idx"))
-  expect_match(msg(root), "resolve outside")
-
-  root <- local_saved_dir()
-  dir <- file.path(root, "extdata", "cds")
-  outdir <- withr::local_tempdir()
-  unlink(file.path(dir, "bpcells_matrix_dir"), recursive = TRUE)
-  link(outdir, file.path(dir, "bpcells_matrix_dir"))
-  expect_match(msg(root), "resolve outside")
-
-  # Prefix-sibling directory must not count as inside.
-  root <- local_saved_dir()
-  dir <- file.path(root, "extdata", "cds")
-  sibling <- paste0(dir, "2")
-  dir.create(sibling)
-  writeLines("x", file.path(sibling, "f"))
-  unlink(file.path(dir, "umap.idx"))
-  link(file.path(sibling, "f"), file.path(dir, "umap.idx"))
-  expect_match(msg(root), "resolve outside")
-
-  # Links that stay inside, and a symlinked resource directory, are fine.
-  root <- local_saved_dir()
-  dir <- file.path(root, "extdata", "cds")
-  file.rename(file.path(dir, "umap.idx"), file.path(dir, "real.idx"))
-  link("real.idx", file.path(dir, "umap.idx"))
-  expect_true(msg(root))
-
-  root <- local_saved_dir()
-  moved <- withr::local_tempdir()
-  dir <- file.path(root, "extdata", "cds")
-  file.rename(dir, file.path(moved, "cds"))
-  link(file.path(moved, "cds"), dir)
-  expect_true(msg(root))
-})
+# Symbolic-link and containment behavior is covered in test-filesystem.R.

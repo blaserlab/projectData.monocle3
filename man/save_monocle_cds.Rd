@@ -190,6 +190,29 @@ staging directory.
 save location. The loader does not use it.
 }
 
+\section{Filesystem safety}{
+
+monocle3 and BPCells follow symbolic links when they copy a matrix directory
+and do not check where paths lead, so this function does. Before anything is
+staged, the directory of each on-disk BPCells matrix under \code{counts} is
+listed (no file is read, one flat directory per matrix) and refused, with an
+error of class \code{projectData.monocle3_unsafe_backing} (also
+\code{projectData.monocle3_save_error}), if it is missing, holds a nested
+directory, lacks the files BPCells writes (\code{version}, \code{storage_order},
+\code{shape}, \code{row_names}, \code{col_names}, \code{idxptr} and \code{val} or \code{val_data}), or
+contains a symbolic link of any kind (internal, escaping or dangling): a link
+would put the bytes of some other file into your package. The directory
+itself may be reached through links, and so may the package directory and
+parents such as \code{inst/extdata}. An existing \verb{inst/extdata/<name>} that is a
+link, or contains one, is never replaced (\code{projectData.monocle3_not_owned}),
+and a dangling link where a placeholder would go is refused too. The staging
+directory is created fresh (never through an existing path), is checked to lie
+inside the package, and is removed without following links. The saved tree is
+validated with the loader's own checks before anything is moved into the
+package. Entry types are judged with base R, which cannot distinguish a FIFO or
+device file from a regular file; those are not detected.
+}
+
 \section{Documentation}{
 
 Document the dataset with the usual roxygen2 convention in \code{R/data.R}, a

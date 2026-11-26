@@ -19,6 +19,18 @@
 #'   `paths$work_dir` allocated by projectData, and returns a named list with
 #'   the single CDS.
 #'
+#' @section Filesystem safety:
+#' monocle3 and BPCells copy the matrix directory by following whatever is
+#' inside it, so the loader refuses a resource before the native load when
+#' anything inside the saved directory is a symbolic link (internal, escaping or
+#' dangling), when an indexed path is absolute, uses `..`, or is of the wrong
+#' type, or when the BPCells directory is not flat or lacks the files BPCells
+#' writes. The directory itself, and the library it lives in, may be reached
+#' through symbolic links. The same check runs in `validate` and again in `open`
+#' (a listing of about ten entries; no matrix data is read), and `open` refuses a
+#' work directory that lies inside the installed resource. Resources written by
+#' [save_monocle_cds()] never contain links.
+#'
 #' @section What the restored object references:
 #' Monocle copies the BPCells matrix directory (and a second, row-ordered copy
 #' it derives) into uniquely named subdirectories of `paths$work_dir`, so the
@@ -44,23 +56,40 @@ projectData_loaders <- function() {
 
 # validate ---------------------------------------------------------------
 
-# Returns TRUE or a single message. Reads only the small file_index.rds.
+# Returns TRUE or a single message. Lists the resource tree (a handful of
+# entries) and reads only the small file_index.rds; never matrix data.
 validate_monocle_cds <- function(descriptor, root, context) {
   src <- descriptor$source
   if (!is_scalar_string(src)) {
     return("a Monocle CDS resource needs a `Source` directory")
+  }
+  if (!is_plain_relative(src)) {
+    return(paste0("`Source` must be a relative path inside the package: '", src, "'"))
   }
   objs <- descriptor$objects
   if (length(objs) != 1L || !is_scalar_string(objs)) {
     return(paste0("a Monocle CDS resource must declare exactly one object in ",
                   "`Objects`; got ", length(objs)))
   }
-  dir <- file.path(root, src)
+  check_saved_directory(file.path(root, src), src)
+}
+
+# The checks shared by validate (at registration time) and open (just before
+# the native load), so the two cannot drift. `dir` itself may be reached through
+# symbolic links (a symlinked library); nothing inside it may be one.
+check_saved_directory <- function(dir, src) {
   if (!dir.exists(dir)) {
     return(paste0("saved Monocle directory '", src, "' does not exist"))
   }
+  # Before anything inside is read: a linked file_index.rds could lead anywhere.
+  tree <- saved_tree_problems(dir)
+  if (length(tree)) {
+    return(paste0("'", src, "' is not a safe saved Monocle directory (", paste(tree, collapse = "; "),
+                  "). Symbolic links inside a resource are never followed; the installed ",
+                  "data package looks damaged or altered: reinstall it"))
+  }
   index_path <- file.path(dir, "file_index.rds")
-  if (!file.exists(index_path)) {
+  if (!file.exists(index_path) || dir.exists(index_path)) {
     hint <- if (length(list.files(dir, pattern = "\\.tar(\\.gz)?$"))) {
       " (a tar archive was found; save with archive_control = list(archive_type = \"none\"))"
     } else {
@@ -124,8 +153,7 @@ file_index_listing_problem <- function(index, src) {
     }
   }
   paths <- files$file_path
-  if (any(grepl("^(/|[A-Za-z]:|~)", paths)) ||
-      any(vapply(strsplit(paths, "[/\\\\]"), function(p) any(p == ".."), NA))) {
+  if (!all(is_plain_relative(paths))) {
     return(paste0(idx, " lists paths that are not relative to the saved directory"))
   }
   if (anyDuplicated(paths)) {
@@ -134,7 +162,9 @@ file_index_listing_problem <- function(index, src) {
   NULL
 }
 
-# Checks the saved files against the (already well-formed) listing.
+# Checks the saved files against the (already well-formed) listing. The tree
+# was already found free of links, so resolved locations equal lexical ones; the
+# containment test stays as an independent guard on the listed paths.
 validate_saved_files <- function(files, dir, src, mat_rows) {
   idx <- paste0("'", src, "/file_index.rds'")
   paths <- files$file_path
@@ -144,24 +174,23 @@ validate_saved_files <- function(files, dir, src, mat_rows) {
     return(paste0("'", src, "' is missing saved file(s): ",
                   paste(missing, collapse = ", ")))
   }
-  # Symlinks may point anywhere, so compare resolved locations. `dir` is
-  # resolved too: a symlinked resource directory is legitimate, but nothing
-  # inside it may lead out of it.
-  real_dir <- normalizePath(dir, winslash = "/", mustWork = TRUE)
-  real <- normalizePath(full, winslash = "/", mustWork = TRUE)
-  prefix <- paste0(sub("/+$", "", real_dir), "/")
-  inside <- if (.Platform$OS.type == "windows") {
-    startsWith(tolower(real), tolower(prefix))
-  } else {
-    startsWith(real, prefix)
-  }
-  if (!all(inside)) {
+  if (!all(is_inside(full, dir))) {
     return(paste0(idx, " lists path(s) that resolve outside the saved directory: ",
-                  paste(paths[!inside], collapse = ", ")))
+                  paste(paths[!is_inside(full, dir)], collapse = ", ")))
   }
-  if (!dir.exists(full[mat_rows])) {
+  is_dir <- dir.exists(full)
+  if (!is_dir[mat_rows]) {
     return(paste0("BPCells matrix '", paths[mat_rows], "' in '", src,
                   "' is not a directory"))
+  }
+  if (any(is_dir[!mat_rows])) {
+    return(paste0(idx, " lists a directory where a file is expected: ",
+                  paste(paths[is_dir & !mat_rows], collapse = ", ")))
+  }
+  matrix_problems <- backing_dir_problems(full[mat_rows])
+  if (length(matrix_problems)) {
+    return(paste0("BPCells matrix '", paths[mat_rows], "' in '", src,
+                  "' is not usable: ", paste(matrix_problems, collapse = "; ")))
   }
   TRUE
 }
@@ -187,13 +216,27 @@ open_monocle_cds <- function(descriptor, paths, context) {
   if (!is_scalar_string(paths$work_dir) || !dir.exists(paths$work_dir)) {
     stop("projectData did not provide an existing work directory.", call. = FALSE)
   }
+  # Native loading copies the BPCells directory into the work directory; that
+  # must never be (inside) the installed resource, which is read only.
+  work_dir <- normalizePath(paths$work_dir, winslash = "/", mustWork = TRUE)
+  source_dir <- normalizePath(paths$source, winslash = "/", mustWork = TRUE)
+  if (identical(work_dir, source_dir) || is_inside(work_dir, source_dir)) {
+    stop("The work directory provided for '", descriptor$resource,
+         "' lies inside the installed resource; refusing to write there.", call. = FALSE)
+  }
+  # The same checks as validate, repeated at the point of use.
+  problem <- check_saved_directory(paths$source, descriptor$source %||% basename(paths$source))
+  if (!isTRUE(problem)) {
+    stop("Cannot open Monocle resource '", descriptor$resource, "': ", problem, ".",
+         call. = FALSE)
+  }
 
   # monocle3 creates uniquely named `monocle.bpcells.*.tmp` children inside
   # matrix_path, so the unique work_dir can be passed as is.
   matrix_control <- monocle3::set_matrix_control(list(
     matrix_class = "BPCells",
     matrix_mode = "dir",
-    matrix_path = normalizePath(paths$work_dir, winslash = "/", mustWork = TRUE)
+    matrix_path = work_dir
   ))
 
   # load_monocle_objects() calls SummarizedExperiment generics unqualified, so

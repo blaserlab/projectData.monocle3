@@ -154,6 +154,27 @@
 #' `file_index.rds`, written by Monocle, records the staging directory as the
 #' save location. The loader does not use it.
 #'
+#' @section Filesystem safety:
+#' monocle3 and BPCells follow symbolic links when they copy a matrix directory
+#' and do not check where paths lead, so this function does. Before anything is
+#' staged, the directory of each on-disk BPCells matrix under `counts` is
+#' listed (no file is read, one flat directory per matrix) and refused, with an
+#' error of class `projectData.monocle3_unsafe_backing` (also
+#' `projectData.monocle3_save_error`), if it is missing, holds a nested
+#' directory, lacks the files BPCells writes (`version`, `storage_order`,
+#' `shape`, `row_names`, `col_names`, `idxptr` and `val` or `val_data`), or
+#' contains a symbolic link of any kind (internal, escaping or dangling): a link
+#' would put the bytes of some other file into your package. The directory
+#' itself may be reached through links, and so may the package directory and
+#' parents such as `inst/extdata`. An existing `inst/extdata/<name>` that is a
+#' link, or contains one, is never replaced (`projectData.monocle3_not_owned`),
+#' and a dangling link where a placeholder would go is refused too. The staging
+#' directory is created fresh (never through an existing path), is checked to lie
+#' inside the package, and is removed without following links. The saved tree is
+#' validated with the loader's own checks before anything is moved into the
+#' package. Entry types are judged with base R, which cannot distinguish a FIFO or
+#' device file from a regular file; those are not detected.
+#'
 #' @section Documentation:
 #' Document the dataset with the usual roxygen2 convention in `R/data.R`, a
 #' block followed by the quoted name, for example `"cds_main_adults"`. This
@@ -256,23 +277,37 @@ save_monocle_cds <- function(cds, name, package_dir = ".", overwrite = FALSE) {
     fail(external_assay_message(name, external), class = "projectData.monocle3_external_assay")
   }
 
+  # The author's own BPCells directory is copied by BPCells, which follows
+  # links; it is judged here, before anything is staged. (In-memory counts have
+  # no such directory yet; the converted copy is judged below.)
+  if (identical(representation$kind, "bpcells_dir")) {
+    check_counts_backing(cds, name, fail)
+  }
+
   # 2. Stage, verify, then commit ---------------------------------------
   stage <- tempfile(".projectData.monocle3-stage-", tmpdir = root)
+  stage_created <- FALSE
   keep_stage <- FALSE
   convert_dir <- NULL
   on.exit({
     if (!is.null(convert_dir)) unlink(convert_dir, recursive = TRUE)
-    if (!keep_stage) unlink(stage, recursive = TRUE)
+    # Only a directory this call created, and never through a link.
+    if (!keep_stage && stage_created) remove_tree(stage, within = root)
   }, add = TRUE)
-  dir.create(file.path(stage, "inst", "extdata"), recursive = TRUE)
-  dir.create(file.path(stage, "data"))
-  dir.create(file.path(stage, "backup"))
+  stage_created <- make_new_dir(stage)
+  if (!stage_created || !is_inside(stage, root) ||
+      !all(vapply(file.path(stage, c("inst/extdata", "data", "backup")), make_new_dir,
+                  NA, recursive = TRUE))) {
+    fail("Could not create a staging directory under '", root, "'; nothing was written. ",
+         "Check that the package directory is writable.")
+  }
 
   to_save <- cds
   if (identical(representation$kind, "convertible")) {
     converted <- convert_counts_to_bpcells(cds, fail)
     to_save <- converted$cds
     convert_dir <- converted$dir
+    check_counts_backing(to_save, name, fail)
   }
 
   staged_cds <- file.path(stage, "inst", "extdata", name)
@@ -334,9 +369,12 @@ save_monocle_cds <- function(cds, name, package_dir = ".", overwrite = FALSE) {
 # `existing` is the manifest as read by read_existing_manifest().
 check_save_targets <- function(root, name, overwrite, fail, existing = list()) {
   dest <- file.path(root, "inst", "extdata", name)
-  has_cds <- file.exists(dest)
+  # A dangling link is something that exists: renaming over it would silently
+  # discard it, so it is judged (and refused) like any other target.
+  exists <- function(p) file.exists(p) | is_symlink(p)
+  has_cds <- exists(dest)
   candidates <- file.path(root, "data", paste0(name, ".", rda_extensions))
-  candidates <- candidates[file.exists(candidates)]
+  candidates <- candidates[exists(candidates)]
   for (path in candidates) {
     info <- inspect_rda(path)
     ok <- isTRUE(info$readable) && identical(info$names, name) && isTRUE(info$single) &&
@@ -449,6 +487,36 @@ external_assay_message <- function(name, external) {
   )
 }
 
+# The directories of the on-disk BPCells matrices underneath the counts of
+# `cds`, without reading any values. Lazily subset or transformed counts can
+# rest on several.
+counts_backing_dirs <- function(cds) {
+  counts <- SummarizedExperiment::assay(cds, "counts", withDimnames = FALSE)
+  leaves <- BPCells::all_matrix_inputs(counts)
+  dirs <- unlist(lapply(leaves, function(l) if (methods::is(l, "MatrixDir")) l@dir))
+  unique(as.character(dirs))
+}
+
+# Refuses, before anything is written, a counts directory that cannot be copied
+# safely: missing, holding links (they would be followed and the target's bytes
+# embedded), nested directories, or lacking the files BPCells writes. The
+# directory itself may be reached through links. Cost: a listing of one flat
+# directory per matrix; no file is read.
+check_counts_backing <- function(cds, name, fail) {
+  for (dir in counts_backing_dirs(cds)) {
+    problems <- backing_dir_problems(dir)
+    if (length(problems)) {
+      fail("Cannot save CDS '", name, "': its BPCells counts directory '", dir,
+           "' cannot be copied safely:\n", paste0("  - ", problems, collapse = "\n"),
+           "\nBPCells follows symbolic links when it copies, which would put files from ",
+           "elsewhere into the data package. Replace links by real files, or write the ",
+           "matrix again with BPCells::write_matrix_dir(). Nothing was written.",
+           class = "projectData.monocle3_unsafe_backing")
+    }
+  }
+  invisible()
+}
+
 # Converts the counts of a separate copy using monocle3's own conversion. The
 # intermediate matrix goes to a directory of the session temporary directory,
 # not the default (the working directory).
@@ -552,16 +620,19 @@ commit_staged_resource <- function(root, stage, name, manifest, staged_cds,
     }
   }
   move <- function(from, to) {
-    if (!isTRUE(file.rename(from, to))) {
+    if (!isTRUE(move_path(from, to))) {
       stop("could not move '", from, "' to '", to, "'", call. = FALSE)
     }
   }
   restore <- function() {
-    for (path in rev(placed)) unlink(path, recursive = TRUE)
+    # Placed paths are directories and files this call created (the staged tree
+    # is link-free); a link is unlinked itself, never followed.
+    for (path in rev(placed)) remove_tree(path)
     ok <- TRUE
-    for (m in rev(moved)) ok <- isTRUE(file.rename(m$to, m$from)) && ok
+    for (m in rev(moved)) ok <- isTRUE(move_path(m$to, m$from)) && ok
     for (dir in rev(made_dirs)) {
-      if (dir.exists(dir) && !length(list.files(dir, all.files = TRUE, no.. = TRUE))) {
+      if (dir.exists(dir) && !is_symlink(dir) &&
+          !length(list.files(dir, all.files = TRUE, no.. = TRUE))) {
         unlink(dir, recursive = TRUE)
       }
     }
