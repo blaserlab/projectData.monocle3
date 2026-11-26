@@ -149,6 +149,17 @@ local_path_spy <- function() {
 
 work_root <- function() file.path(tempdir(), "projectData-work")
 
+# projectData (>= 0.0.0.9008) names work directories with an injective encoding
+# of the package id: only [a-z0-9-] pass through, every other byte becomes %XX.
+# Mirrors the documented behavior instead of calling an internal function.
+encode_path_component <- function(x) {
+  bytes <- charToRaw(enc2utf8(x))
+  keep <- (bytes >= as.raw(0x61) & bytes <= as.raw(0x7a)) |
+    (bytes >= as.raw(0x30) & bytes <= as.raw(0x39)) | bytes == as.raw(0x2d)
+  paste(ifelse(keep, rawToChar(bytes, multiple = TRUE), sprintf("%%%02X", as.integer(bytes))),
+        collapse = "")
+}
+
 # Dense counts of a restored CDS, without attaching anything permanently.
 cds_counts <- function(cds) {
   suppressWarnings(as.matrix(SummarizedExperiment::assay(cds, "counts")))

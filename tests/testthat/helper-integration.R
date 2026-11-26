@@ -159,8 +159,12 @@ testdata_source_problems <- function() {
                    } else "unset"))
   }
   version <- read.dcf(file.path(src, "DESCRIPTION"), "Version")[[1]]
-  if (!identical(version, testdata_version)) {
-    return(sprintf("fixture source %s is version %s; %s is required", src, version, testdata_version))
+  # A newer source is accepted: the checks below still require its resources
+  # and manifest to be identical to the installed 0.0.0.9004 fixtures.
+  if (utils::packageVersion(testdata_pkg) != testdata_version ||
+      numeric_version(version) < testdata_version) {
+    return(sprintf("fixture source %s is version %s; at least %s is required (installed: %s)",
+                   src, version, testdata_version, utils::packageVersion(testdata_pkg)))
   }
   extdata <- list.files(file.path(src, "inst", "extdata"))
   if (!setequal(extdata, testdata_cds)) {

@@ -95,7 +95,7 @@ test_that("E: restored BPCells files live under the allocated work_dir in the se
   for (w in wd) {
     expect_true(in_dir(w, work_root()))
     expect_true(in_dir(w, tempdir()))
-    expect_identical(basename(dirname(w)), testdata_pkg)
+    expect_identical(basename(dirname(w)), encode_path_component(testdata_pkg))
   }
   expect_identical(basename(work_root()), "projectData-work")
 

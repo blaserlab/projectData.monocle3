@@ -54,8 +54,7 @@ test_that("a generated manifest makes the test data package work through project
   expect_true(file.exists(file.path(lib, testdata_pkg, "DESCRIPTION")),
               info = paste(installed, collapse = "\n"))
   if (integration_mode()) {
-    expect_identical(as.character(utils::packageVersion(testdata_pkg, lib.loc = lib)),
-                     testdata_version)
+    expect_gte(utils::packageVersion(testdata_pkg, lib.loc = lib), testdata_version)
   }
   fixture_before <- snapshot_installed()
 
