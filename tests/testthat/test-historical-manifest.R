@@ -1,4 +1,9 @@
-# Fixture package: projectData.monocle3.testdata (see helper-integration.R).
+# HISTORICAL COMPATIBILITY TESTS. These load native Monocle resources written by
+# an earlier version, shipped in the installed package projectData.monocle3.testdata
+# (see helper-integration.R), and check that the current loader still restores
+# them. The fixtures are never regenerated. They are separate from the
+# self-contained end-to-end tests (test-e2e-*.R) and are strict only with
+# PDM3_HISTORICAL_TESTS=true.
 
 test_that("A: the .rda placeholder is not a CDS and needs neither projectData nor the adapter", {
   skip_if_no_testdata()

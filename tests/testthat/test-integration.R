@@ -206,7 +206,7 @@ test_that("data_retry() supports a new attempt after the installation is repaire
 
 test_that("a restored CDS does not depend on the installed resource directory", {
   skip_if_no_monocle()
-  skip_on_os("windows")  # an installed UMAP index stays mapped and cannot be removed
+  skip_on_platform("windows", "the installed UMAP index stays memory-mapped and an open file cannot be deleted")
   local_clean_projectData()
   fx <- cds_fixtures()
   lib <- install_cds_package(list(human_cds = fx$human$saved), pkg = "pdcdsgone")

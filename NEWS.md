@@ -1,3 +1,71 @@
+# projectData.monocle3 0.0.0.9013
+
+Cross-platform CI and dependency compatibility. No change to production code,
+the public API, the serialization format or the loader contract.
+
+* **CI:** `.github/workflows/R-CMD-check.yaml` runs the strict self-contained
+  integration suite (`PDM3_INTEGRATION_TESTS=true`) and `R CMD check --as-cran`
+  on Ubuntu, Windows and macOS (R release) and Ubuntu with R 4.5, with
+  `projectData` from CRAN and monocle3 and BPCells from GitHub at pinned tags
+  (`tools/ci-pin-remotes.R`; DESCRIPTION itself stays unpinned). A second job
+  runs `R CMD check` without the Monocle stack (skips expected).
+  `.github/workflows/compat-matrix.yaml` runs the suite for each configuration of
+  `tools/compat-matrix.R` (`legacy`: projectData 0.0.0.9008 with BPCells 0.3.0;
+  `bpcells_030`), a separate Linux job with the historical fixtures from the
+  pinned commit of `projectData.monocle3.testdata`, and an allowed-failure job
+  against BPCells main. **No workflow has run yet:** see the README compatibility
+  table for what has actually been verified.
+* **Tools:** `tools/compat-matrix.R` (strict run per configuration; a declared
+  version mismatch, a failure or an unlabelled skip fails it), `tools/compat-libs.R`
+  (builds the alternative libraries), `tools/verify-stack.R`,
+  `tools/ci-pin-remotes.R`. `tools/` and `.github/` are build-ignored.
+* **DESCRIPTION:** `github::blaserlab/projectData` removed from `Remotes`:
+  projectData 0.1.0 on CRAN satisfies `projectData (>= 0.0.0.9005)` and the
+  whole suite passes against it. `monocle3` and `BPCells` are still GitHub-only.
+* **Tests:** new `test-e2e-dependency-contract.R` states the assumptions about
+  monocle3 and BPCells (native index layout, BPCells directory files, the
+  `matrix_control` interface, restored matrices under the work directory) so that
+  an upgrade that changes one fails with a message naming it. The symbolic-link
+  tests are no longer skipped by operating system: they run wherever links can be
+  created and `Sys.readlink()` reports them (`skip_if_no_symlinks()`; a skip is
+  labelled as a platform skip). `system2(env = )` (which does not work on
+  Windows) replaced by `withr::with_envvar()` in the helpers that start R
+  subprocesses. The test that deletes an installed resource while an UMAP index
+  is mapped is a labelled Windows platform skip.
+
+# projectData.monocle3 0.0.0.9012
+
+Test infrastructure only: no change to production code, the public API, the
+serialization format or the loader contract.
+
+* New self-contained end-to-end suite (`test-e2e-*.R`, `helper-synthetic.R`,
+  `child-probe.R`) that needs no `projectData.monocle3.testdata`: a small
+  deterministic synthetic CDS (sparse integer counts, metadata, `logcounts` and
+  `spliced` assays, an ADT alternative experiment, PCA/UMAP reductions) is
+  authored into a generated data package with `save_monocle_cds()` (in-memory
+  counts that are converted automatically, and BPCells-backed counts), built
+  with `R CMD build`, installed with `R CMD INSTALL` into two temporary
+  libraries and loaded through projectData. Covered: layout, placeholders,
+  manifest and idempotent `write_monocle_manifest()`; discovery without opening;
+  exact reconstruction; `data_attach()`/`data_detach()`; work-directory and
+  backing-file lifecycle; fresh-process loading from each library and through a
+  symbolic link; independence from the authoring directory; and failure and
+  `data_retry()` recovery (missing resource directory, `file_index.rds` or
+  BPCells file, invalid manifest source, unsupported external assay, failed
+  restoration, missing optional dependency) on disposable copies.
+* The tests that use `projectData.monocle3.testdata` are now the *historical
+  compatibility* family, renamed `test-historical-*.R` (contents unchanged
+  apart from gating). Fixture identity is a version floor (0.0.0.9004 or later)
+  plus checksums of each resource instead of an exact version.
+* **Behavior change in test gating:** strictness has two independent switches.
+  `PDM3_INTEGRATION_TESTS=true` makes the self-contained tests mandatory and
+  no longer requires the fixture package; the new
+  `PDM3_HISTORICAL_TESTS=true` makes the historical tests mandatory (fixture
+  package, `PDM3_TESTDATA_SOURCE`, content match). Set both for the previous
+  "full integration run". Without the fixture package the historical tests skip
+  with a `[historical fixtures]` reason, or fail under `PDM3_HISTORICAL_TESTS=true`.
+* `pkgload` added to `Suggests` (fresh-process tests under `devtools::test()`).
+
 # projectData.monocle3 0.0.0.9011
 
 Filesystem and symbolic-link safety. No change to the serializer, the resource

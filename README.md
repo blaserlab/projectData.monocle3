@@ -32,12 +32,16 @@ For the general adapter mechanism, see `vignette("adapters", package = "projectD
 
 ## Installation
 
-None of the dependencies below are on CRAN. Install them from GitHub:
+`projectData` is on CRAN; `monocle3` and `BPCells` are not (monocle3 is on
+GitHub and Bioconductor-dependent, BPCells compiles C++ and needs the HDF5
+headers: `libhdf5-dev` on Debian/Ubuntu, `brew install hdf5 pkg-config` on
+macOS). With `pak`, which also resolves monocle3's Bioconductor dependencies for
+your R version:
 
 ``` r
 install.packages("pak")
 pak::pak(c(
-  "blaserlab/projectData",
+  "projectData",
   "bnprks/BPCells/r",
   "cole-trapnell-lab/monocle3",
   "blaserlab/projectData.monocle3"
@@ -46,7 +50,16 @@ pak::pak(c(
 
 `monocle3` and `BPCells` are listed in `Suggests` (and `Remotes`) so that
 resource validation and registration work without them; opening a CDS requires
-both and fails with an explicit message if they are missing.
+both and fails with an explicit message if they are missing. The tested
+combinations are in [Compatibility](#compatibility).
+
+**R-universe.** The package itself builds and installs from a universe because
+its hard dependencies (`projectData`, base packages) are on CRAN. `monocle3` and
+`BPCells` are GitHub-only `Suggests`: whether a universe resolves `Remotes` for
+check-time Suggests has not been verified here, so without them in the same
+universe the end-to-end tests are skipped there (ordinary mode) and the
+universe check verifies nothing about the Monocle stack. The CI workflows in
+`.github/workflows/` are the verification, not the universe build.
 
 ## Using a data package that ships a CDS
 
@@ -313,58 +326,171 @@ PCA/other reduction models stored in the CDS object itself are in memory.
 The default (`"counts"`) assay is the one that is loaded from disk. Other
 in-memory assays and alternative experiments are tested with synthetic data.
 
+## Compatibility
+
+Status of each configuration:
+
+* **Verified**: the complete required integration suite passed in that exact
+  configuration (`tools/compat-matrix.R`: every test run, no skip other than a
+  labelled platform skip, declared versions found) and, where stated, `R CMD check`.
+* **Expected**: technically plausible, but not fully tested.
+* **Unsupported**: known incompatibility or outside the supported scope.
+
+Installing a dependency successfully, or a run in which tests were skipped, is
+not verification. The workflows in `.github/workflows/` have **not been run
+yet**, so no Windows or macOS configuration is verified.
+
+| projectData | monocle3 | BPCells | R / Bioconductor | OS | Status |
+|---|---|---|---|---|---|
+| 0.1.0 (CRAN) | 1.4.27 | 0.3.1 | 4.5.2 / 3.22 | Linux (Ubuntu 22.04) | Verified: 235 tests, 2,548 expectations, 0 failures, 0 skips, with the historical fixtures |
+| 0.1.0 (CRAN) | 1.4.27 | 0.3.0 (release tag) | 4.5.2 / 3.22 | Linux | Verified: same counts, with the historical fixtures |
+| 0.0.0.9008 (GitHub `31ff415`) | 1.4.27 | 0.3.0 | 4.5.2 / 3.22 | Linux | Verified: same counts, with the historical fixtures (the stack of the Issue 3 report) |
+| 0.1.0 (CRAN) | 1.4.27 | 0.3.0 development snapshot (`f2026c3`) | 4.5.2 / 3.22 | Linux | Verified: `R CMD check --as-cran` Status: 2 NOTEs, no errors or warnings (the NOTEs are the development version number with GitHub-only `Remotes`/`Suggests`, and "unable to verify current time"); 2,332 expectations passed, 0 failures, 15 historical-fixture skips (fixtures not installed in that run) |
+| 0.1.0 | 1.4.27 | 0.3.1 | release | Windows | Expected: workflow written, never run |
+| 0.1.0 | 1.4.27 | 0.3.1 | release | macOS | Expected: workflow written, never run |
+| 0.1.0 | 1.4.27 | 0.3.1 | 4.5 | Linux (GitHub Actions) | Expected: workflow written, never run |
+| 0.0.0.9005 to 0.0.0.9007 | any | any | any | any | Expected: the declared minimum `0.0.0.9005` has not been run; 0.0.0.9008 and 0.1.0 have |
+| any | other 1.4.x | 0.3.x | other R | Linux | Expected |
+| any | any | BPCells main | any | Linux | Expected: allowed-failure CI job, never run (`all_matrix_inputs()` is experimental upstream) |
+| any | any | counts or alternative assays in HDF5, `DelayedArray` or BPCells storage; tar archives | any | any | Unsupported (refused before anything is written, or rejected on load) |
+
+The symbolic-link, read-only installation, relocation between libraries and
+fresh-process tests are part of the suite, so each *Verified* Linux row includes
+them. On Windows they run only where links can be created and `Sys.readlink()`
+reports them (probed, not assumed), and the read-only test cannot make
+directories read-only there; this is untested.
+
+Assumptions about monocle3 and BPCells that the package cannot control (the
+layout written by `save_monocle_objects()`, the BPCells matrix directory files, the
+`matrix_control` interface of `load_monocle_objects()`) are stated by
+`test-e2e-dependency-contract.R`; an upgrade that changes one fails there by name.
+The supported BPCells directory has `version`, `storage_order`, `shape`,
+`row_names`, `col_names`, `idxptr` and `val` or `val_data`, flat, with no symbolic links.
+
 ## Development
 
 ``` r
-devtools::test()   # integration tests need monocle3, BPCells, SingleCellExperiment, SummarizedExperiment
+devtools::test()   # needs monocle3, BPCells, SingleCellExperiment, SummarizedExperiment, withr
 ```
 
-Tests build two small real CDS fixtures in a subprocess (about 20 seconds)
-and install them into throwaway libraries.
+### Integration tests
 
-### Ordinary and full integration runs
+There are two families of integration tests with separate prerequisites and
+separate strictness switches.
 
-By default (`PDM3_INTEGRATION_TESTS` unset or `false`) the integration tests
-are optional: they skip when `monocle3`, `BPCells` or the other Monocle
-packages are missing, when `projectData.monocle3.testdata` is not installed or
-lacks the fixture resources, and when its source tree is not found (the
-`PDM3_TESTDATA_SOURCE` environment variable, or a sibling directory of this
-package). This keeps `R CMD check` usable anywhere.
+| | Self-contained end-to-end tests | Historical compatibility tests |
+|---|---|---|
+| Files | `test-e2e-*.R`, `test-save-*.R`, `test-integration.R`, `test-filesystem.R` (real-CDS parts) | `test-historical-*.R` |
+| Data | generated by the current code in a temporary package | resources written by an earlier version, in the installed package `projectData.monocle3.testdata` |
+| Needs | the Monocle stack and `projectData` | the fixture package (and, for one file, its source tree) |
+| Strict with | `PDM3_INTEGRATION_TESTS=true` | `PDM3_HISTORICAL_TESTS=true` |
 
-Setting `PDM3_INTEGRATION_TESTS=true` requests a **full integration run**, in
-which none of those conditions may skip. A missing or incompatible
-prerequisite is raised as an error inside the test (class
-`projectData.monocle3_integration_prerequisite`), which testthat records as a
-failure, so the run fails and `Rscript` exits non-zero. The run requires:
-
-- `projectData` (>= 0.0.0.9005), `monocle3`, `BPCells`,
-  `SingleCellExperiment`, `SummarizedExperiment` and `withr`;
-- `projectData.monocle3.testdata` **0.0.0.9004** installed, with exactly the
-  resources `cds_bpcells_a`, `cds_bpcells_b`, `cds_multiassay` (each a saved
-  CDS directory), a manifest registering them with
-  `projectData.monocle3::cds`, and `data()` items for them and `ordinary_data`;
-- `PDM3_TESTDATA_SOURCE` pointing at the fixture source tree (no sibling
-  fallback), at that same version, with the same `inst/extdata` and
-  `inst/projectData` file contents as the installed package (checked by
-  checksum). The source-dependent tests install a disposable copy of it.
-
-Platform-specific skips (`skip_on_platform()`) remain, and their reason is
-labelled `[full integration: platform skip]` in the test summary. The test
-`full integration prerequisites are met` lists every unmet prerequisite at once.
-
-To run it in a clean R session, install the fixture package from its source
-tree and run the tests in a fresh process:
+A contributor needs nothing beyond the declared runtime dependencies
+(`projectData`, `monocle3`, `BPCells`, `SingleCellExperiment`,
+`SummarizedExperiment`, `Matrix`, `withr`; `pkgload` when running under
+`devtools::test()`) to verify the whole workflow:
 
 ``` sh
-export PDM3_INTEGRATION_TESTS=true
-export PDM3_TESTDATA_SOURCE=/path/to/projectData.monocle3.testdata   # at version 0.0.0.9004
+NOT_CRAN=true PDM3_INTEGRATION_TESTS=true Rscript -e 'devtools::test(filter = "e2e", reporter = "summary")'
+```
+
+The `test-e2e-*.R` files (about 2.5 minutes, 1,174 expectations) do this, in a
+throwaway directory removed at the end of the run (about 100 KB of data, plus the
+temporary libraries):
+
+1. build a small synthetic CDS (24 x 16 and 30 x 12; sparse integer counts,
+   cell and gene metadata, `logcounts` and `spliced` assays, an ADT alternative
+   experiment, PCA and UMAP reductions with fixed values) with public monocle3,
+   SingleCellExperiment and BPCells APIs (`helper-synthetic.R`);
+2. scaffold a data package (`DESCRIPTION`, `R/data.R`, `man/`) and author two
+   resources with `save_monocle_cds()`: one from in-memory counts (converted
+   automatically), one from BPCells-backed counts;
+3. `R CMD build` the package and `R CMD INSTALL` the tarball into two separate
+   temporary libraries (names with spaces and non-ASCII characters where the
+   locale allows);
+4. check discovery, reconstruction, `data_attach()`/`data_detach()`, work
+   directories and retained objects in this session, the same package in each
+   library (and through a symbolic link) in fresh R processes, independence
+   from the authoring directory, and damaged installations with `data_retry()`
+   recovery on disposable copies.
+
+Only the live package libraries are read, never modified. Fresh processes
+(`run_child()` in `helper-synthetic.R`) load the adapter with `pkgload` under
+`devtools::test()` and from the installed package otherwise.
+
+### Continuous integration
+
+| Workflow | What it runs |
+|---|---|
+| `R-CMD-check.yaml` | Ubuntu, Windows, macOS (R release) and Ubuntu (R 4.5): `tools/verify-stack.R`, the strict suite (`tools/compat-matrix.R current`, `PDM3_INTEGRATION_TESTS=true`), then `R CMD check --as-cran`. A fifth job checks without the Monocle stack (skips expected). |
+| `compat-matrix.yaml` | Linux, weekly and on demand: the `legacy` and `bpcells_030` configurations; the historical fixtures; BPCells `main` (allowed failure). |
+
+CI installs `projectData` from CRAN, and `monocle3` and `BPCells` from GitHub at
+the tags in the workflow's `MONOCLE3_REF`/`BPCELLS_REF` (written into `Remotes` of
+the CI checkout by `tools/ci-pin-remotes.R`; the package's own `Remotes` stay
+unpinned). monocle3's Bioconductor dependencies are resolved by `pak` for the R
+version in use. The historical job checks out `projectData.monocle3.testdata` at a
+pinned commit (`TESTDATA_REF`), installs it from that source tree, and the tests
+verify its identity: version floor plus the md5 of every resource's
+`file_index.rds` and `cds_object.rds` (`testdata_fingerprint`), identical to the
+installed copy. The checksum is what matters, not an exact version. Note that
+fixtures contain binary files: check them out without line-ending conversion.
+
+Reproduce a configuration locally (each takes about 7 minutes after the libraries exist):
+
+``` sh
+Rscript tools/compat-libs.R projectdata_cran bpcells_031   # libraries; BPCells compiles (about 10 minutes)
+Rscript tools/compat-matrix.R bpcells_031                  # self-contained suite, strict
+PDM3_TESTDATA_SOURCE=/path/to/projectData.monocle3.testdata \
+  Rscript tools/compat-matrix.R --historical bpcells_031   # plus the historical fixtures
+Rscript tools/compat-matrix.R --list
+```
+
+The runner prints R, OS, Bioconductor and package versions, counts, and a status
+(`VERIFIED`, `NOT VERIFIED (skips)`, `FAILED`); its exit status is 0 only if all
+requested configurations are verified.
+
+### Strictness
+
+By default (both variables unset or `false`) every integration test is optional:
+it skips when a prerequisite is missing (and on CRAN, unless `NOT_CRAN=true`).
+Setting a variable to `true` turns missing prerequisites of *that family* into
+errors (class `projectData.monocle3_integration_prerequisite`), which testthat
+records as failures, so a run cannot look successful because tests were
+skipped. Any other value is an error.
+
+- `PDM3_INTEGRATION_TESTS=true`: the self-contained tests must run. This never
+  requires the fixture package: a missing `projectData.monocle3.testdata` only
+  skips the historical tests, with the reason prefixed `[historical fixtures]`.
+- `PDM3_HISTORICAL_TESTS=true`: the historical tests must run. It requires
+  `projectData.monocle3.testdata` (version 0.0.0.9004 or later) installed with
+  exactly the resources `cds_bpcells_a`, `cds_bpcells_b`, `cds_multiassay`, a
+  manifest registering them with `projectData.monocle3::cds`, `data()` items for
+  them and `ordinary_data`, and the original content (checksums of each
+  resource's `file_index.rds` and `cds_object.rds`; a later version with
+  unchanged resources is accepted). It also requires `PDM3_TESTDATA_SOURCE`
+  pointing at the fixture source tree (no sibling fallback), with the same
+  `inst/extdata` and `inst/projectData` contents as the installed package. The
+  source-dependent tests install a disposable copy of it. The fixtures are never
+  regenerated.
+
+Platform-specific skips (`skip_on_platform()`) remain in strict runs, labelled
+`[strict integration: platform skip]`. The tests `strict ... integration
+prerequisites are met` list every unmet prerequisite at once.
+
+A complete run, from a clean process:
+
+``` sh
+export NOT_CRAN=true PDM3_INTEGRATION_TESTS=true PDM3_HISTORICAL_TESTS=true
+export PDM3_TESTDATA_SOURCE=/path/to/projectData.monocle3.testdata
 
 R CMD INSTALL "$PDM3_TESTDATA_SOURCE"
 Rscript -e 'devtools::test(reporter = "summary", stop_on_failure = TRUE)'
 
 # or, as an installed-package check
-R CMD build . && NOT_CRAN=true R CMD check projectData.monocle3_*.tar.gz
+R CMD build . && R CMD check projectData.monocle3_*.tar.gz
 ```
 
-Check the reporter summary for skips: in a full run only platform skips
-should appear.
+Check the reporter summary for skips: in a strict run only platform skips
+should appear. When a fresh-process, build or install step fails, the error
+contains the complete output of the subprocess.

@@ -36,10 +36,6 @@ fs_check <- function(root, source = "extdata/cds") {
   validate_monocle_cds(fs_descriptor(source), root, list())
 }
 
-make_link <- function(target, from) {
-  skip_if_not(isTRUE(suppressWarnings(file.symlink(target, from))), "symbolic links cannot be created here")
-}
-
 # Non-ASCII names need a UTF-8 locale to be written and read back faithfully.
 skip_if_not_utf8 <- function() skip_if_not(l10n_info()[["UTF-8"]], "not a UTF-8 locale")
 
@@ -80,7 +76,7 @@ test_that("2: BPCells directories are judged on required files, nesting and type
 
 test_that("3: an internal symbolic link is refused, to a file or to a directory", {
   skip_if_not_installed("withr")
-  skip_on_platform("windows", "needs POSIX symlinks")
+  skip_if_no_symlinks()
   root <- fs_saved_root()
   dir <- file.path(root, "extdata", "cds")
   file.rename(file.path(dir, "umap.idx"), file.path(dir, "real.idx"))
@@ -104,7 +100,7 @@ test_that("3: an internal symbolic link is refused, to a file or to a directory"
 
 test_that("4: escaping symbolic links are refused wherever they sit", {
   skip_if_not_installed("withr")
-  skip_on_platform("windows", "needs POSIX symlinks")
+  skip_if_no_symlinks()
   outside <- withr::local_tempfile()
   writeLines("secret", outside)
   outdir <- withr::local_tempdir()
@@ -152,7 +148,7 @@ test_that("4: escaping symbolic links are refused wherever they sit", {
 
 test_that("5: dangling symbolic links are refused, listed or not", {
   skip_if_not_installed("withr")
-  skip_on_platform("windows", "needs POSIX symlinks")
+  skip_if_no_symlinks()
   root <- fs_saved_root()
   dir <- file.path(root, "extdata", "cds")
   unlink(file.path(dir, "umap.idx"))
@@ -168,7 +164,7 @@ test_that("5: dangling symbolic links are refused, listed or not", {
 
 test_that("6: symlinked libraries and a symlinked resource directory still work", {
   skip_if_not_installed("withr")
-  skip_on_platform("windows", "needs POSIX symlinks")
+  skip_if_no_symlinks()
   root <- fs_saved_root(lib = "realib")
   base <- dirname(root)
 
@@ -237,7 +233,7 @@ test_that("8: unexpected entries are reported, not silently copied", {
 
 test_that("9/10: paths with spaces and non-ASCII characters validate and are judged the same", {
   skip_if_not_installed("withr")
-  skip_on_platform("windows", "needs POSIX symlinks")
+  skip_if_no_symlinks()
   skip_if_not_utf8()
   lib <- "my lib \u00e9\u4e2d"
   root <- fs_saved_root(lib = lib)
@@ -283,7 +279,7 @@ test_that("11/12: `..` and absolute paths are refused in the index and in `Sourc
 
 test_that("the loader's open() repeats the check and never copies from an unsafe tree", {
   skip_if_not_installed("withr")
-  skip_on_platform("windows", "needs POSIX symlinks")
+  skip_if_no_symlinks()
   root <- fs_saved_root()
   dir <- file.path(root, "extdata", "cds")
   outside <- withr::local_tempfile()
@@ -319,7 +315,7 @@ test_that("the loader's open() repeats the check and never copies from an unsafe
 
 test_that("remove_tree() never follows a link and leaves what is outside alone", {
   skip_if_not_installed("withr")
-  skip_on_platform("windows", "needs POSIX symlinks")
+  skip_if_no_symlinks()
   base <- withr::local_tempdir()
   outside <- file.path(base, "outside")
   dir.create(outside)
@@ -365,7 +361,7 @@ fs_refusal <- function(pkg, regexp, class = "projectData.monocle3_not_owned", na
 
 test_that("a link in place of the resource directory, or inside it, is not owned", {
   skip_if_not_installed("withr")
-  skip_on_platform("windows", "needs POSIX symlinks")
+  skip_if_no_symlinks()
 
   # Link to a valid resource, with evidence that would otherwise own it.
   pkg <- new_pkg_source("fakedata")
@@ -406,7 +402,7 @@ test_that("a link in place of the resource directory, or inside it, is not owned
 
 test_that("a link cycle in an existing resource neither hangs ownership nor is accepted", {
   skip_if_not_installed("withr")
-  skip_on_platform("windows", "needs POSIX symlinks")
+  skip_if_no_symlinks()
   pkg <- new_pkg_source("fakedata")
   dir <- add_fake_cds(pkg, "ds")
   add_placeholder(pkg, "ds")
@@ -447,7 +443,7 @@ cds_with_external_counts <- function(inject = function(dir) NULL, env = parent.f
 
 expect_unsafe_backing <- function(inject, regexp) {
   skip_if_no_monocle()
-  skip_on_platform("windows", "needs POSIX symlinks")
+  skip_if_no_symlinks()
   pkg <- copy_saved_pkg()
   x <- cds_with_external_counts(inject)
   before <- file_state(pkg)
@@ -489,7 +485,7 @@ test_that("7/8: saving refuses a counts directory with a missing file, a nested 
 
 test_that("a counts directory reached through links, with spaces, is fine", {
   skip_if_no_monocle()
-  skip_on_platform("windows", "needs POSIX symlinks")
+  skip_if_no_symlinks()
   pkg <- new_save_pkg()
   x <- cds_with_external_counts()
   # The directory ("my counts") has a space; reach it through a link as well.
@@ -504,7 +500,7 @@ test_that("a counts directory reached through links, with spaces, is fine", {
 
 test_that("an overwrite is refused, byte for byte, when the existing resource holds a link", {
   skip_if_no_monocle()
-  skip_on_platform("windows", "needs POSIX symlinks")
+  skip_if_no_symlinks()
   cds <- fixture_bpcells_cds("mouse")
   for (damage in c("inside", "directory", "dangling")) {
     pkg <- copy_saved_pkg()
@@ -531,7 +527,7 @@ test_that("an overwrite is refused, byte for byte, when the existing resource ho
 
 test_that("saving works through a symlinked package directory and a symlinked inst/extdata", {
   skip_if_no_monocle()
-  skip_on_platform("windows", "needs POSIX symlinks")
+  skip_if_no_symlinks()
   pkg <- new_save_pkg()
   base <- dirname(pkg)
 
@@ -650,7 +646,7 @@ test_that("14: when restoring also fails, the backup is kept and named", {
 
 test_that("6/15/16: a symlinked library loads two independent CDS, writes nowhere else, and survives detach", {
   skip_if_no_monocle()
-  skip_on_platform("windows", "needs POSIX symlinks")
+  skip_if_no_symlinks()
   local_clean_projectData()
   fx <- cds_fixtures()
   real_lib <- install_cds_package(list(human_cds = fx$human$saved, mouse_cds = fx$mouse$saved),
@@ -709,7 +705,7 @@ test_that("6/15/16: a symlinked library loads two independent CDS, writes nowher
 
 test_that("an installed resource that was tampered with is refused at open, naming the problem", {
   skip_if_no_monocle()
-  skip_on_platform("windows", "needs POSIX symlinks")
+  skip_if_no_symlinks()
   local_clean_projectData()
   lib <- install_cds_package(list(tampered = cds_fixtures()$human$saved), pkg = "pdtamper")
   outside <- withr::local_tempfile()

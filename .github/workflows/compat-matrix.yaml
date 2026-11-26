@@ -1,0 +1,114 @@
+# The dependency compatibility matrix of tools/compat-matrix.R (one job per
+# configuration, each with its own libraries) and the historical fixture job.
+# Slower than R-CMD-check because BPCells is compiled for configurations that
+# need another version, so it runs on demand, weekly, and when dependencies or
+# the matrix change. Each job fails on any failure, on any skip other than a
+# labelled platform skip, and on a package version other than the declared one.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 5 * * 1'
+  pull_request:
+    paths:
+      - 'tools/**'
+      - 'DESCRIPTION'
+      - 'R/**'
+      - 'tests/**'
+      - '.github/workflows/compat-matrix.yaml'
+
+name: compat-matrix
+
+permissions: read-all
+
+env:
+  GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+  MONOCLE3_REF: v1.4.27
+  # `current` is the newest BPCells release; the other BPCells versions are built
+  # into their own libraries by tools/compat-libs.R.
+  BPCELLS_REF: v0.3.1
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    name: ${{ matrix.config }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Libraries (tools/compat-libs.R) put in front of the default one.
+          - {config: legacy,      libs: 'projectdata_9008 bpcells_030'}
+          - {config: bpcells_030, libs: 'projectdata_cran bpcells_030'}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - run: sudo apt-get update && sudo apt-get install -y libhdf5-dev
+      - run: Rscript tools/ci-pin-remotes.R
+      - uses: r-lib/actions/setup-pandoc@v2
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          install-pandoc: 'false'
+          extra-packages: any::callr, any::pkgload, any::testthat, any::BiocManager, any::DelayedArray
+      - name: Build the alternative libraries for this configuration
+        run: Rscript tools/compat-libs.R ${{ matrix.libs }}
+      - name: Run the configuration (strict)
+        run: Rscript tools/compat-matrix.R ${{ matrix.config }}
+
+  # The historical fixtures: native resources written by an earlier version,
+  # from the projectData.monocle3.testdata repository at a pinned commit. The
+  # tests verify their identity (version floor and md5 of every resource file)
+  # and fail, never skip, if anything differs (PDM3_HISTORICAL_TESTS=true).
+  historical:
+    runs-on: ubuntu-latest
+    name: historical fixtures (linux)
+    env:
+      # Commit of blaserlab/projectData.monocle3.testdata, package version 0.0.0.9005.
+      TESTDATA_REF: 83d6ff36e89f4650eddc237089d7bece873f8d36
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: blaserlab/projectData.monocle3.testdata
+          ref: ${{ env.TESTDATA_REF }}
+          path: testdata-src
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - run: sudo apt-get update && sudo apt-get install -y libhdf5-dev
+      - run: Rscript tools/ci-pin-remotes.R
+      - uses: r-lib/actions/setup-pandoc@v2
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          install-pandoc: 'false'
+          extra-packages: any::callr, any::pkgload, any::testthat, any::BiocManager, any::DelayedArray
+      - name: Install the fixture package from its source tree
+        run: R CMD INSTALL testdata-src
+      - name: Verify the runtime stack
+        run: Rscript tools/verify-stack.R
+      - name: Run the whole suite with the historical fixtures (strict)
+        env:
+          PDM3_TESTDATA_SOURCE: ${{ github.workspace }}/testdata-src
+        run: Rscript tools/compat-matrix.R --historical current
+
+  # Early warning, never blocking: the whole suite against BPCells' main branch.
+  # all_matrix_inputs() is documented upstream as experimental, so a red job here
+  # means "look before the next BPCells release", not "the package is broken".
+  bpcells-main:
+    runs-on: ubuntu-latest
+    name: BPCells main (allowed failure)
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - run: sudo apt-get update && sudo apt-get install -y libhdf5-dev
+      - run: Rscript tools/ci-pin-remotes.R
+      - uses: r-lib/actions/setup-pandoc@v2
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          install-pandoc: 'false'
+          extra-packages: any::callr, any::pkgload, any::testthat, any::BiocManager, any::DelayedArray
+      - run: Rscript tools/compat-libs.R projectdata_cran bpcells_main
+      - run: Rscript tools/compat-matrix.R bpcells_main

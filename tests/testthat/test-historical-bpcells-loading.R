@@ -1,4 +1,9 @@
-# Fixture package: projectData.monocle3.testdata (see helper-integration.R).
+# HISTORICAL COMPATIBILITY TESTS. These load native Monocle resources written by
+# an earlier version, shipped in the installed package projectData.monocle3.testdata
+# (see helper-integration.R), and check that the current loader still restores
+# them. The fixtures are never regenerated. They are separate from the
+# self-contained end-to-end tests (test-e2e-*.R) and are strict only with
+# PDM3_HISTORICAL_TESTS=true.
 
 test_that("C: attaching does not open any CDS; first access opens exactly once", {
   local_testdata_session()

@@ -14,3 +14,4 @@ inst/data-raw/regenerated_git_commands.R
 .RData
 .quarto
 inst/data-raw/
+tools/compat-libs/

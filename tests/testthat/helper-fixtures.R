@@ -5,8 +5,8 @@
 
 source(system.file("examples", "fixtures.R", package = "projectData"), local = TRUE)
 
-# Skips when the Monocle stack is missing; an error (test failure) in a full
-# integration run, see helper-integration.R.
+# Skips when the Monocle stack is missing; an error (test failure) when
+# PDM3_INTEGRATION_TESTS=true, see helper-integration.R.
 skip_if_no_monocle <- function() {
   if (!integration_mode()) skip_on_cran()
   integration_gate(dependency_problems(monocle_stack))
@@ -35,11 +35,14 @@ build_cds_fixture <- function(dir, seed, n_genes, n_cells, prefix) {
     "saveRDS(list(counts = m, cell_md = cell_md, gene_md = gene_md,",
     "  umap = reducedDims(cds)$UMAP, pca = reducedDims(cds)$PCA), file.path(getwd(), 'expected.rds'))"
   ), script)
-  status <- suppressWarnings(system2(
-    file.path(R.home("bin"), "Rscript"), shQuote(script),
-    stdout = FALSE, stderr = FALSE,
-    env = paste0("R_LIBS=", paste(.libPaths(), collapse = .Platform$path.sep))
-  ))
+  # system2(env =) is pasted into a shell command line and does not work on Windows.
+  status <- withr::with_envvar(
+    c(R_LIBS = paste(.libPaths(), collapse = .Platform$path.sep)),
+    suppressWarnings(system2(
+      file.path(R.home("bin"), "Rscript"), shQuote(script),
+      stdout = FALSE, stderr = FALSE
+    ))
+  )
   saved <- file.path(dir, "saved")
   if (!identical(status, 0L) || !file.exists(file.path(saved, "file_index.rds"))) {
     return(NULL)

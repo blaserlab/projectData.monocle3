@@ -1,8 +1,9 @@
-# End to end: generate a manifest for a disposable copy of the
+# HISTORICAL COMPATIBILITY TEST (see test-historical-bpcells-loading.R; strict only
+# with PDM3_HISTORICAL_TESTS=true). End to end: generate a manifest for a disposable copy of the
 # projectData.monocle3.testdata source, install it into a temporary library
 # and use it through projectData. The source tree is found through the
 # PDM3_TESTDATA_SOURCE environment variable (ordinary runs also try a sibling
-# directory of this package and skip if neither exists; full integration runs
+# directory of this package and skip if neither exists; strict historical runs
 # require the variable and fail without it, see helper-integration.R). The
 # installed copy of the fixture package is never modified.
 
@@ -53,8 +54,8 @@ test_that("a generated manifest makes the test data package work through project
   )
   expect_true(file.exists(file.path(lib, testdata_pkg, "DESCRIPTION")),
               info = paste(installed, collapse = "\n"))
-  if (integration_mode()) {
-    expect_gte(utils::packageVersion(testdata_pkg, lib.loc = lib), testdata_version)
+  if (historical_mode()) {
+    expect_gte(utils::packageVersion(testdata_pkg, lib.loc = lib), testdata_min_version)
   }
   fixture_before <- snapshot_installed()
 
@@ -94,7 +95,7 @@ test_that("deleting a saved directory from the test data source is repaired by r
   skip_if_no_testdata()
   pkg <- disposable_testdata_copy()
   resources <- manifest_resources(pkg)
-  if (integration_mode()) {
+  if (historical_mode()) {
     expect_setequal(resources, testdata_cds)
   } else {
     skip_if(length(resources) < 2L, "test data source has fewer than two registered resources")

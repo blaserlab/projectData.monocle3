@@ -1,0 +1,93 @@
+# The three-platform check of the package: the strict self-contained
+# integration suite (PDM3_INTEGRATION_TESTS=true: a missing dependency or a
+# skipped end-to-end test is a failure) and R CMD check. The historical
+# fixtures are a separate job in compat-matrix.yaml. See the compatibility
+# table in README.md for what has actually been verified; a workflow file
+# existing says nothing about that.
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+name: R-CMD-check
+
+permissions: read-all
+
+jobs:
+  R-CMD-check:
+    runs-on: ${{ matrix.config.os }}
+    name: ${{ matrix.config.os }} (R ${{ matrix.config.r }})
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - {os: ubuntu-latest,  r: 'release'}
+          - {os: windows-latest, r: 'release'}
+          - {os: macos-latest,   r: 'release'}
+          - {os: ubuntu-latest,  r: '4.5'}
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      R_KEEP_PKG_SOURCE: yes
+      NOT_CRAN: "true"
+      # Reaches every R subprocess of the tests (Rscript, R CMD build/INSTALL).
+      PDM3_INTEGRATION_TESTS: "true"
+      PDM3_HISTORICAL_TESTS: "false"
+      # The stack under test; ci-pin-remotes.R writes these refs into DESCRIPTION.
+      MONOCLE3_REF: v1.4.27
+      BPCELLS_REF: v0.3.1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: ${{ matrix.config.r }}
+          use-public-rspm: true
+      # BPCells compiles against HDF5 (Windows gets it through Rtools).
+      - name: Install HDF5
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libhdf5-dev
+      - name: Install HDF5
+        if: runner.os == 'macOS'
+        run: brew install hdf5 pkg-config
+      - name: Pin monocle3 and BPCells
+        run: Rscript tools/ci-pin-remotes.R
+      - uses: r-lib/actions/setup-pandoc@v2
+      # projectData comes from CRAN; monocle3 and BPCells from GitHub (Remotes);
+      # monocle3's Bioconductor dependencies are resolved by pak for this R.
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          install-pandoc: 'false'
+          extra-packages: any::rcmdcheck, any::callr, any::pkgload, any::BiocManager, any::DelayedArray
+          needs: check
+      - name: Verify the runtime stack
+        run: Rscript tools/verify-stack.R
+      - name: Self-contained integration suite (strict)
+        run: Rscript tools/compat-matrix.R current
+      - uses: r-lib/actions/check-r-package@v2
+        with:
+          upload-snapshots: true
+          upload-results: true
+          args: 'c("--no-manual", "--as-cran")'
+          build_args: 'c("--no-manual", "--compact-vignettes=gs+qpdf")'
+
+  # What CRAN would run: Suggests not installed, integration tests skipped.
+  # Expected to report skips; it verifies nothing about monocle3 or BPCells.
+  R-CMD-check-no-stack:
+    runs-on: ubuntu-latest
+    name: ubuntu-latest, without the Monocle stack (skips expected)
+    env:
+      NOT_CRAN: "false"
+      _R_CHECK_FORCE_SUGGESTS_: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-pandoc@v2
+      # Remotes would drag in the Monocle stack, so only hard dependencies.
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          install-pandoc: 'false'
+          extra-packages: any::rcmdcheck, any::testthat, any::withr, any::knitr, any::rmarkdown
+          dependencies: '"hard"'
+      - uses: r-lib/actions/check-r-package@v2
