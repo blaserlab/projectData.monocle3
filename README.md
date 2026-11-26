@@ -426,9 +426,12 @@ Only the live package libraries are read, never modified. Fresh processes
 | `compat-matrix.yaml` | Linux, weekly and on demand: the `legacy` and `bpcells_030` configurations; the historical fixtures; BPCells `main` (allowed failure). |
 
 CI installs `projectData` from CRAN, and `monocle3` and `BPCells` from GitHub at
-the tags in the workflow's `MONOCLE3_REF`/`BPCELLS_REF` (written into `Remotes` of
-the CI checkout by `tools/ci-pin-remotes.R`; the package's own `Remotes` stay
-unpinned). monocle3's Bioconductor dependencies are resolved by `pak` for the R
+the monocle3 tag in the workflow's `MONOCLE3_REF` (written into `Remotes` of the
+CI checkout by `tools/ci-pin-remotes.R`; the package's own `Remotes` stay
+unpinned). BPCells cannot be pinned this way: monocle3 lists BPCells unpinned in
+its own `Remotes`, and pak reports a conflict, so CI gets BPCells from its
+default branch (0.3.1 at the time of writing; the run prints its commit). Other
+BPCells versions are tested through `tools/compat-libs.R`. monocle3's Bioconductor dependencies are resolved by `pak` for the R
 version in use. The historical job checks out `projectData.monocle3.testdata` at a
 pinned commit (`TESTDATA_REF`), installs it from that source tree, and the tests
 verify its identity: version floor plus the md5 of every resource's

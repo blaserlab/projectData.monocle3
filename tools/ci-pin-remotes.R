@@ -1,16 +1,18 @@
 # CI only: pins the GitHub entries of DESCRIPTION's Remotes to the refs the
-# workflow tests, so every run installs the same monocle3 and BPCells. The
-# package itself keeps unpinned Remotes (users get the current default branch).
+# workflow tests. Only monocle3 is pinned: monocle3's own DESCRIPTION lists
+# BPCells/r (unpinned) in Remotes, and pak reports a dependency conflict when this
+# package pins BPCells to a tag or commit (verified: pak 2026-11). BPCells is
+# therefore whatever the default branch is; verify-stack.R prints its version and
+# commit and compat-matrix.R checks the version prefix. A specific BPCells version
+# is tested through tools/compat-libs.R instead. The package itself keeps
+# unpinned Remotes.
 # Rewrites DESCRIPTION in the CI checkout; never run it in a working copy you
 # want to keep.
 #
-#   MONOCLE3_REF=v1.4.27 BPCELLS_REF=v0.3.1 Rscript tools/ci-pin-remotes.R
+#   MONOCLE3_REF=v1.4.27 Rscript tools/ci-pin-remotes.R
 
-pins <- c(
-  "cole-trapnell-lab/monocle3" = Sys.getenv("MONOCLE3_REF"),
-  "bnprks/BPCells/r" = Sys.getenv("BPCELLS_REF")
-)
-if (any(!nzchar(pins))) stop("Set MONOCLE3_REF and BPCELLS_REF.")
+pins <- c("cole-trapnell-lab/monocle3" = Sys.getenv("MONOCLE3_REF"))
+if (any(!nzchar(pins))) stop("Set MONOCLE3_REF.")
 
 desc <- read.dcf("DESCRIPTION", keep.white = "Remotes")
 remotes <- trimws(strsplit(desc[1, "Remotes"], ",")[[1]])

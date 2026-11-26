@@ -279,6 +279,8 @@ test_that("11/12: `..` and absolute paths are refused in the index and in `Sourc
 
 test_that("the loader's open() repeats the check and never copies from an unsafe tree", {
   skip_if_not_installed("withr")
+  # open_monocle_cds() requires monocle3 and BPCells before it checks anything.
+  skip_if_no_monocle()
   skip_if_no_symlinks()
   root <- fs_saved_root()
   dir <- file.path(root, "extdata", "cds")

@@ -23,9 +23,8 @@ permissions: read-all
 env:
   GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
   MONOCLE3_REF: v1.4.27
-  # `current` is the newest BPCells release; the other BPCells versions are built
-  # into their own libraries by tools/compat-libs.R.
-  BPCELLS_REF: v0.3.1
+  # BPCells in the default library is main's HEAD (see tools/ci-pin-remotes.R);
+  # other BPCells versions are built into their own libraries by tools/compat-libs.R.
 
 jobs:
   matrix:
