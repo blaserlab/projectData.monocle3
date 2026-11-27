@@ -84,31 +84,11 @@ loader's own validation and rolled back on failure; `overwrite = TRUE` replaces
 only a resource this package can show it wrote. The step-by-step version,
 including building and installing, is `vignette("authoring-monocle3-data")`.
 
-### Why does the package contain a placeholder `.rda` object?
+### Why is there a placeholder `.rda` file?
 
-Disk-backed Monocle3 `cell_data_set` (CDS) objects cannot be distributed as conventional `.rda` files because they depend on external BPCells matrix files. Instead, `projectData.monocle3` stores the CDS and its backing files under `inst/extdata/` and reconstructs the object on demand through projectData.
+The `.rda` file is a placeholder, not the actual CDS. It allows the dataset to appear in standard R dataset listings (`data(package = "myDataPackage")`) and supports conventional help documentation (`?my_cds`). The actual disk-backed CDS is stored separately under `inst/extdata/` and loaded on demand through projectData.
 
-The accompanying `.rda` file is a **placeholder, not the actual CDS**. It serves two purposes:
-
-1. **Standard R dataset discovery:** The placeholder allows the dataset to appear in conventional R package listings, such as `data(package = "myDataPackage")`, and to have documentation accessible through `?dataset_name`.
-2. **Guidance for users:** If someone loads the placeholder using `data("dataset_name")`, its contents explain how to access the actual CDS through projectData.
-
-To retrieve the real object, use:
-
-```r
-projectData::data_attach("myDataPackage")
-# The CDS is now available as dataset_name
-
-# Alternatively, retrieve it directly:
-cds <- projectData::data_get(
-  "dataset_name",
-  package = "myDataPackage"
-)
-```
-
-The manifest tells projectData to load the disk-backed CDS rather than the placeholder. Loading the placeholder explicitly with `data()` can mask an already attached CDS, so use the projectData interfaces for accessing the actual dataset.
-
-This approach preserves compatibility with familiar R package discovery and documentation conventions while allowing large, disk-backed datasets to be distributed without embedding their expression matrices in `.rda` files.
+If loaded with base R's `data()`, the placeholder displays instructions for accessing the real object. Use `projectData::data_attach()` or `projectData::data_get()` instead; explicitly loading the placeholder can mask an attached CDS.
 
 ## Use a data package
 

@@ -18,6 +18,7 @@ make_placeholder <- function(name, package) {
       step_1 = sprintf("Remove this placeholder from the global environment: rm(%s)", name),
       step_2 = sprintf("Attach the data package: projectData::data_attach(\"%s\")", package),
       step_3 = sprintf("Use the real dataset: %s", name),
+      note = "data() does not print the real object, and loading it can mask an attached one.",
       requires = "Required packages: projectData, projectData.monocle3",
       install = "Install if missing: remotes::install_github(\"blaserlab/projectData.monocle3\")"
     ),
