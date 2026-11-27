@@ -42,11 +42,11 @@ jobs:
         with:
           r-version: ${{ matrix.config.r }}
           use-public-rspm: true
-      # BPCells compiles against HDF5 (Windows gets it through Rtools).
-      - name: Install HDF5
+      # Windows gets HDF5 through Rtools.
+      - name: Install HDF5 (BPCells compiles against it)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libhdf5-dev
-      - name: Install HDF5
+      - name: Install HDF5 (BPCells compiles against it)
         if: runner.os == 'macOS'
         run: brew install hdf5 pkg-config
       - name: Pin monocle3 and BPCells

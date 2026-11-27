@@ -50,6 +50,17 @@ Initial public release. The changes below summarize the development versions
   (R release and 4.5), macOS and Windows, with projectData 0.1.0, monocle3 1.4.27
   and BPCells 0.3.1.
 
+## Release conventions
+
+* README reorganized to the same structure as `projectData.Seurat` (description,
+  installation, creating and using a data package, supported storage,
+  documentation and troubleshooting); installation now separates projectData
+  core, the adapter, optional runtime dependencies and data packages; the
+  `.gitignore` caveat for the placeholder `.rda` is documented.
+* CI step and job names aligned with `projectData.Seurat`; `tools/README.md`
+  lists the conventions the two adapters share. No change to code, loader,
+  serialization, public API or dependency versions.
+
 ## Known limitations
 
 * One CDS per resource; no persistent cache; HDF5 and `DelayedArray` storage are

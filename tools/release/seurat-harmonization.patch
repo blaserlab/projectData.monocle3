@@ -1,0 +1,98 @@
+diff --git a/.github/workflows/R-CMD-check.yaml b/.github/workflows/R-CMD-check.yaml
+index 3722e78..3d0cbaf 100644
+--- a/.github/workflows/R-CMD-check.yaml
++++ b/.github/workflows/R-CMD-check.yaml
+@@ -1,12 +1,13 @@
+ # Ordinary package checks on the three platforms, plus a CRAN-like check without
+ # the optional Seurat stack. The first run (before the HDF5 and pandoc steps
+-# existed) failed during dependency installation on every platform; this version
+-# has not run yet. See the compatibility table in README.md for what has actually
++# existed) failed during dependency installation on every platform; the run at
++# commit 2ed093f passed on all five jobs. See the compatibility table in README.md for what has actually
+ # been verified.
+ on:
+   push:
+     branches: [main, master]
+   pull_request:
++  workflow_dispatch:
+ 
+ name: R-CMD-check
+ 
+@@ -58,6 +59,7 @@ jobs:
+       - uses: r-lib/actions/check-r-package@v2
+         with:
+           upload-snapshots: true
++          upload-results: true
+           build_args: 'c("--no-manual", "--compact-vignettes=gs+qpdf")'
+ 
+   # What CRAN would run: Suggests not installed, integration tests skipped.
+diff --git a/README.md b/README.md
+index e004cbd..20d2bd2 100644
+--- a/README.md
++++ b/README.md
+@@ -1,6 +1,7 @@
+ # projectData.Seurat
+ 
+ <!-- badges: start -->
++[![R-CMD-check](https://github.com/blaserlab/projectData.Seurat/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/blaserlab/projectData.Seurat/actions/workflows/R-CMD-check.yaml)
+ <!-- badges: end -->
+ 
+ `projectData.Seurat` lets an R data package ship **Seurat v5 objects whose assay
+@@ -53,12 +54,26 @@ Unsupported storage is refused, never silently materialized or left dangling.
+ ## Installation
+ 
+ ```r
+-install.packages("projectData")                     # CRAN
+-install.packages(c("SeuratObject", "Seurat"))       # Seurat is only for your analysis
+-remotes::install_github("bnprks/BPCells/r")         # BPCells is not on CRAN
+-remotes::install_github("blaserlab/projectData.Seurat")
++# 1. projectData core (CRAN)
++install.packages("projectData")
++
++# 2. The adapter (GitHub)
++install.packages("pak")
++pak::pak("blaserlab/projectData.Seurat")
++
++# 3. Optional runtime and analysis dependencies (BPCells is GitHub-only and
++#    needs the HDF5 headers; Seurat is only for your own analysis)
++install.packages(c("SeuratObject", "Seurat"))
++pak::pak("bnprks/BPCells/r@v0.3.1")
+ ```
+ 
++4. **A data package that uses the adapter** is installed like any package. You
++   never call `library(projectData.Seurat)`: its manifest names the adapter and
++   projectData loads it on first access.
++
++Installing the adapter alone does not install `SeuratObject` or `BPCells`. There
++is no R-universe build yet.
++
+ `projectData` (>= 0.1.0) is the only hard dependency. Opening or saving a
+ resource also needs `SeuratObject` (>= 5.0.0) and `BPCells`; a missing package
+ gives an actionable error at first access, not at registration. Instead of
+@@ -67,7 +82,7 @@ on exist, and that every layer it restores equals what was saved; otherwise it
+ stops with an error of class `projectData.Seurat_dependency_error` or
+ `projectData.Seurat_resource_error`.
+ 
+-## Author a dataset
++## Creating a data package
+ 
+ In the source directory of a data package (the one with `DESCRIPTION`):
+ 
+@@ -105,7 +120,7 @@ loading the package, is `vignette("authoring-seurat-data")`.
+ show it wrote; there is no `force`. Saving is staged, verified and rolled back on
+ failure.
+ 
+-## Use a dataset
++## Using a data package
+ 
+ ``` r
+ projectData::data_attach("myDataPackage")
+@@ -120,7 +135,7 @@ its layers lazily from the installed directory, so **the data package must stay
+ installed while the object is in use**; `data_detach()` does not delete those
+ files. See `vignette("using-seurat-data")`.
+ 
+-## Troubleshooting
++## Documentation and troubleshooting
+ 
+ | Symptom | Cause | What to do |
+ |---|---|---|

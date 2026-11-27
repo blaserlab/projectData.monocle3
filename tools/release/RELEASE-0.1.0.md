@@ -7,14 +7,15 @@ exact commit. No tag, GitHub release or R-universe publication has been made.
 ## Install (final commands)
 
 ```r
+install.packages("projectData")                       # 1. core (CRAN)
 install.packages("pak")
-pak::pak(c(
-  "projectData",                          # CRAN
-  "bnprks/BPCells/r",                     # GitHub only; needs HDF5 headers
-  "cole-trapnell-lab/monocle3",           # GitHub only
-  "blaserlab/projectData.monocle3"
-))
+pak::pak("blaserlab/projectData.monocle3")            # 2. the adapter (GitHub)
+pak::pak(c("bnprks/BPCells/r",                        # 3. GitHub only; needs HDF5 headers
+           "cole-trapnell-lab/monocle3"))
 ```
+
+A data package that uses the adapter is installed like any package. Installing the
+adapter alone does not install monocle3 or BPCells.
 
 Hard dependency: `projectData (>= 0.1.0)` (CRAN; same as `projectData.Seurat`). `monocle3` and `BPCells` are `Suggests` + `Remotes`: needed to author and
 to open a CDS, not to install, register or validate.

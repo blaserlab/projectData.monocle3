@@ -4,6 +4,8 @@
 # need another version, so it runs on demand, weekly, and when dependencies or
 # the matrix change. Each job fails on any failure, on any skip other than a
 # labelled platform skip, and on a package version other than the declared one.
+# This workflow has not run on GitHub yet; see the compatibility table in
+# README.md for what has actually been verified.
 on:
   workflow_dispatch:
   schedule:
@@ -29,7 +31,7 @@ env:
 jobs:
   matrix:
     runs-on: ubuntu-latest
-    name: ${{ matrix.config }}
+    name: ${{ matrix.config }} (ubuntu-latest)
     strategy:
       fail-fast: false
       matrix:
@@ -42,7 +44,8 @@ jobs:
       - uses: r-lib/actions/setup-r@v2
         with:
           use-public-rspm: true
-      - run: sudo apt-get update && sudo apt-get install -y libhdf5-dev
+      - name: Install HDF5 (BPCells compiles against it)
+        run: sudo apt-get update && sudo apt-get install -y libhdf5-dev
       - run: Rscript tools/ci-pin-remotes.R
       - uses: r-lib/actions/setup-pandoc@v2
       - uses: r-lib/actions/setup-r-dependencies@v2
@@ -74,7 +77,8 @@ jobs:
       - uses: r-lib/actions/setup-r@v2
         with:
           use-public-rspm: true
-      - run: sudo apt-get update && sudo apt-get install -y libhdf5-dev
+      - name: Install HDF5 (BPCells compiles against it)
+        run: sudo apt-get update && sudo apt-get install -y libhdf5-dev
       - run: Rscript tools/ci-pin-remotes.R
       - uses: r-lib/actions/setup-pandoc@v2
       - uses: r-lib/actions/setup-r-dependencies@v2
@@ -102,7 +106,8 @@ jobs:
       - uses: r-lib/actions/setup-r@v2
         with:
           use-public-rspm: true
-      - run: sudo apt-get update && sudo apt-get install -y libhdf5-dev
+      - name: Install HDF5 (BPCells compiles against it)
+        run: sudo apt-get update && sudo apt-get install -y libhdf5-dev
       - run: Rscript tools/ci-pin-remotes.R
       - uses: r-lib/actions/setup-pandoc@v2
       - uses: r-lib/actions/setup-r-dependencies@v2

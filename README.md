@@ -5,62 +5,55 @@
 <!-- badges: end -->
 
 `projectData.monocle3` lets an R data package ship a **Monocle 3
-`cell_data_set` (CDS) whose counts are a BPCells on-disk matrix**, and has
-[projectData](https://github.com/blaserlab/projectData) restore it on first
-access from any package library, without attaching Monocle 3 and without writing
-to the installed package or the working directory.
+`cell_data_set` (CDS) whose counts are a BPCells on-disk matrix**, and
+restores it on first access from any package library, without attaching Monocle 3
+and without writing to the installed package or the working directory.
 
-It is an adapter for projectData, which does the general work (registering
-installed data packages, resolving names and conflicts, opening resources lazily,
-caching and retrying). This package adds the Monocle-specific part: how to *save*
-a CDS into a data package so that it is portable, and how to *restore* it.
-
-## Why use it
+It is an adapter for [projectData](https://github.com/blaserlab/projectData),
+which does the general work (registering installed data packages, resolving
+names and conflicts, opening resources lazily, caching and retrying). This
+package adds the Monocle-specific part: how to *save* a CDS into a data package so
+that it is portable, and how to *restore* it.
 
 A CDS with BPCells counts holds a reference to a directory on the author's disk,
 so `save()` or `saveRDS()` produce a file that is useless on another machine.
-Monocle's `save_monocle_objects()` and `load_monocle_objects()` solve this for
-single files, but not for an R package that people install and open through
-`projectData`. This adapter does that, and it makes the authoring safe: in-memory
-counts are converted to BPCells automatically, unsupported storage is refused
-before anything is written, and the manifest and placeholder are generated and
-reconciled for you.
-
-Use it when the counts are large enough to stay on disk and the object will be
-distributed in a data package. If the CDS fits comfortably in memory, ship it as
-an ordinary `.rda` dataset; no adapter is needed.
+Use this adapter when the counts are large enough to stay on disk and the object
+will be distributed in a data package; if the CDS fits comfortably in memory, ship
+it as an ordinary `.rda` dataset.
 
 ## Installation
 
-`projectData` is on CRAN. `monocle3` and `BPCells` are GitHub-only (BPCells
-compiles C++ and needs the HDF5 headers: `libhdf5-dev` on Debian/Ubuntu,
-`brew install hdf5 pkg-config` on macOS). `pak` also resolves monocle3's
-Bioconductor dependencies for your version of R:
+Four separate things may need installing. `monocle3` and `BPCells` are GitHub-only
+(BPCells compiles C++ and needs the HDF5 headers: `libhdf5-dev` on Debian/Ubuntu,
+`brew install hdf5 pkg-config` on macOS).
 
 ``` r
+# 1. projectData core (CRAN)
+install.packages("projectData")
+
+# 2. The adapter (GitHub)
 install.packages("pak")
-pak::pak(c(
-  "projectData",
-  "bnprks/BPCells/r",
-  "cole-trapnell-lab/monocle3",
-  "blaserlab/projectData.monocle3"
-))
+pak::pak("blaserlab/projectData.monocle3")
+
+# 3. Optional runtime and analysis dependencies; pak also resolves monocle3's
+#    Bioconductor dependencies for your version of R
+pak::pak(c("bnprks/BPCells/r", "cole-trapnell-lab/monocle3"))
 ```
 
-Only `projectData` is a hard dependency. `monocle3` and `BPCells` are listed in
-`Suggests` (and `Remotes`) on purpose: registering, cataloguing and validating a
-data package work without them, while *authoring* and *opening* a CDS need both
-and fail with a message naming the missing package. The adapter is not on CRAN
-or R-universe yet.
+4. **A data package that uses the adapter** is installed like any package. You
+   never call `library(projectData.monocle3)`: the package's manifest names the
+   adapter and projectData loads it on first access.
 
-| You want to... | You need |
-|---|---|
-| Install and register the adapter, validate resources | `projectData`, `projectData.monocle3` |
-| Open (reconstruct) a CDS | the above, plus `monocle3`, `BPCells` (monocle3 brings `SingleCellExperiment` and `SummarizedExperiment`) |
-| Author a data package | the above, plus `Matrix` if your counts are sparse |
-| Run the tests or build the vignettes | the above, plus `testthat`, `withr`, `pkgload`, `knitr`, `rmarkdown` |
+Only `projectData` is a hard dependency of the adapter, so step 2 alone does not
+install `monocle3` or `BPCells`. Registering, cataloguing and validating a data
+package work without them; *authoring* and *opening* a CDS need both and fail with
+a message naming the missing package. Authors also need `Matrix` if their counts
+are sparse.
 
-## Author a data package
+There is no R-universe build yet. On any route, `monocle3` and `BPCells` remain a
+separate GitHub installation.
+
+## Creating a data package
 
 In the source directory of a data package (the one with `DESCRIPTION`):
 
@@ -84,13 +77,13 @@ loader's own validation and rolled back on failure; `overwrite = TRUE` replaces
 only a resource this package can show it wrote. The step-by-step version,
 including building and installing, is `vignette("authoring-monocle3-data")`.
 
-### Why is there a placeholder `.rda` file?
+The `.rda` file is a **placeholder, not the CDS**. It lets the dataset appear in
+`data(package = "myDataPackage")` and have help (`?my_cds`); loading it with
+`data()` prints instructions. Use `projectData::data_attach()` or `data_get()` for
+the real object. The placeholder must be part of the package source: if
+`.gitignore` excludes `*.rda`, add `!data/my_cds.rda`.
 
-The `.rda` file is a placeholder, not the actual CDS. It allows the dataset to appear in standard R dataset listings (`data(package = "myDataPackage")`) and supports conventional help documentation (`?my_cds`). The actual disk-backed CDS is stored separately under `inst/extdata/` and loaded on demand through projectData.
-
-If loaded with base R's `data()`, the placeholder displays instructions for accessing the real object. Use `projectData::data_attach()` or `projectData::data_get()` instead; explicitly loading the placeholder can mask an attached CDS.
-
-## Use a data package
+## Using a data package
 
 ``` r
 projectData::data_attach("myDataPackage")
@@ -99,15 +92,15 @@ my_cds                             # first access restores the CDS
 projectData::data_get("my_cds", package = "myDataPackage")   # no attaching
 ```
 
-No `library(projectData.monocle3)` is needed: the manifest names the adapter and
-projectData loads it when the object is first used. The restored CDS keeps
-working after `data_detach()`. See `vignette("using-monocle3-data")`.
+The restored CDS keeps working after `data_detach()`. Opening copies the BPCells
+matrix, plus a second row-ordered copy that Monocle keeps as `counts_row_order`,
+into a working directory that projectData allocates under the session temporary
+directory, so it costs temporary disk space and is not RAM-free; there is no
+persistent cache. The UMAP index, if any, is read from the
+installed file, so do not reinstall the data package while you use the object.
+See `vignette("using-monocle3-data")`.
 
-`data("my_cds")` loads only the `.rda` **placeholder**, a character vector that
-explains itself; it is not the CDS. Resolution does not depend on it: the
-manifest takes precedence.
-
-## What is supported
+## Supported storage
 
 | Representation | Handling |
 |---|---|
@@ -118,43 +111,23 @@ manifest takes precedence.
 | `counts` as a dense matrix, `DelayedMatrix`, HDF5-backed BPCells | **Refused** before anything is written |
 | HDF5 or tar saves, in-memory-counts saves, several CDS in one resource | Not supported |
 
-`save_monocle_cds()` automatically converts supported in-memory sparse counts to disk-backed BPCells storage without modifying the original CDS. Existing BPCells-backed counts are preserved.
-
 Unsupported storage is refused, never silently converted or left dangling.
 `vignette("storage")` explains the details and limits.
 
-## What loading does
+Unlike `projectData.Seurat`, this adapter converts supported in-memory counts
+automatically and restores by copying the matrix on first access; Seurat objects
+must already be BPCells-backed and are read from the installed directories
+without copying.
 
-* **First access only.** projectData validates the installed directory (no matrix
-  data is read), then the adapter calls `monocle3::load_monocle_objects()`.
-* **Native loading copies.** Monocle copies the BPCells matrix, and a second,
-  row-ordered copy that it keeps as the `counts_row_order` assay, into a working
-  directory that projectData allocates for that opening under the session
-  temporary directory. The installed package is read-only and never modified;
-  `setwd()` is never called.
-* **Detaching deletes nothing.** A retained CDS keeps working until the session
-  ends, when Monocle removes the copies. The UMAP index, if any, is the exception:
-  it is read from the installed file, so do not reinstall the data package while
-  you use the object.
-* **Disk-backed is not RAM-free**, and it costs temporary disk space (about two
-  copies of the matrix per opening). There is no persistent cache in this
-  version.
+## Documentation and troubleshooting
 
-## How it differs from projectData.Seurat
-
-The two adapters share the projectData contract and similar entry points, but not
-the persistence mechanism.
-
-| | projectData.monocle3 | projectData.Seurat |
-|---|---|---|
-| Save | `save_monocle_cds()` | `save_seurat_object()` |
-| Manifest | `write_monocle_manifest()` | `write_seurat_manifest()` |
-| Persistence | Monocle's native save and load | The adapter's own copy of each BPCells directory, plus `object.rds` |
-| First access | Copies the matrix into the work directory | Reads from the installed directories, copies nothing |
-| In-memory counts | Converted automatically | Must already be BPCells directories |
-| Storage report | none | `seurat_storage_report()` |
-
-## Troubleshooting
+* `vignette("authoring-monocle3-data")`: create and install a data package.
+* `vignette("using-monocle3-data")`: discover, load, detach, troubleshoot.
+* `vignette("storage")`: what is stored, what loading copies, lifetimes, limits.
+* `?save_monocle_cds`, `?write_monocle_manifest`, `?projectData_loaders`:
+  reference, including condition classes.
+* projectData: `vignette("projectData", package = "projectData")` and
+  `vignette("adapters", package = "projectData")`.
 
 | Symptom | Cause | What to do |
 |---|---|---|
@@ -168,6 +141,7 @@ the persistence mechanism.
 | `projectData.monocle3_not_owned` / `_ambiguous_ownership` | The existing files cannot be shown to be written by this package | Choose another `name`, or move the files yourself; nothing was changed |
 | `projectData.monocle3_conflict` / `_manifest_error` | The name belongs to another loader's entry, or the manifest is invalid | Rename the resource, or fix `inst/projectData/manifest.dcf` |
 | `projectData.monocle3_unsafe_backing` | A symbolic link or malformed BPCells directory in your counts | Write the counts to a fresh directory with `BPCells::write_matrix_dir()` |
+| Placeholder missing after a fresh `git clone` | `.gitignore` excludes `*.rda` | Add `!data/<name>.rda`, re-run `write_monocle_manifest()` |
 | A `.projectData.monocle3-stage-*` directory in the package | R was killed during a save | Safe to delete once the package is in the state you want; it may hold the previous files |
 
 ## Compatibility
@@ -218,17 +192,6 @@ layout written by `save_monocle_objects()`, the BPCells directory files, the
 experimental `all_matrix_inputs()`) are stated by `test-e2e-dependency-contract.R`;
 an upgrade that changes one fails there by name.
 
-## Documentation
-
-* `vignette("authoring-monocle3-data")`: create and install a data package.
-* `vignette("using-monocle3-data")`: discover, load, detach, troubleshoot.
-* `vignette("storage")`: what is stored, what loading copies, lifetimes, limits.
-* `?save_monocle_cds`, `?write_monocle_manifest`, `?projectData_loaders`:
-  reference, including condition classes.
-* projectData: `vignette("projectData", package = "projectData")` and
-  `vignette("adapters", package = "projectData")`.
-* Contributing, tests and CI: [tools/README.md](tools/README.md).
-
 ## Limitations
 
 * Saving is staged and rolled back on failure, but it is not a filesystem
@@ -240,3 +203,13 @@ an upgrade that changes one fails there by name.
   CI run above (links are not testable there).
 * Check the size limits of wherever you distribute a data package: the BPCells
   files count towards it.
+
+## Development
+
+``` r
+devtools::test()
+devtools::check()
+```
+
+Strict integration runs, the dependency matrix and CI are described in
+[tools/README.md](tools/README.md).

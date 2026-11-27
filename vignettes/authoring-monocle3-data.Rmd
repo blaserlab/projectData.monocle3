@@ -270,10 +270,15 @@ writeLines(c(
 ), file.path(pkg, "man", "demo_cds.Rd"))
 ```
 
-Keep the script that generates the CDS in `inst/data-raw/`, and mind your
-distribution channel's size limits: the BPCells files count towards the size of
-the package, and CRAN, for example, expects far smaller packages than a typical
-single-cell dataset.
+Practical notes for the real package:
+
+* The placeholder `data/<name>.rda` must be **part of the package source**. If
+  your `.gitignore` excludes `*.rda`, add `!data/<name>.rda`, or the placeholder
+  (and with it the manifest entry) will be missing from fresh checkouts.
+* Keep the script that generates the CDS in `inst/data-raw/`.
+* The BPCells files count towards the size of the package. Check the size limits
+  of wherever you distribute it; CRAN, for example, expects far smaller packages
+  than a typical single-cell dataset.
 
 ## 8. Build and install the data package
 

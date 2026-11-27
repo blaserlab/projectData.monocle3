@@ -70,6 +70,23 @@ verify its identity: version floor plus the md5 of every resource's
 installed copy. The checksum is what matters, not an exact version. Note that
 fixtures contain binary files: check them out without line-ending conversion.
 
+Conventions shared with `projectData.Seurat` (the workflows are not identical
+because the dependencies differ):
+
+| Convention | projectData.monocle3 | projectData.Seurat |
+|---|---|---|
+| Workflows | `R-CMD-check`, `compat-matrix` | same names |
+| Check matrix | Ubuntu (release, 4.5), Windows, macOS | Ubuntu (release, oldrel-1), Windows, macOS |
+| Job without the optional stack | "ubuntu-latest, without the Monocle stack (skips expected)": hard dependencies only | same, "without the Seurat stack" |
+| Strict switch | `PDM3_INTEGRATION_TESTS=true` (self-contained), `PDM3_HISTORICAL_TESTS=true` (fixtures) | `PROJECTDATA_SEURAT_REQUIRE_STACK=true` |
+| Declared versions | `tools/compat-matrix.R` configurations; `tools/verify-stack.R` prints versions and the step summary | `PROJECTDATA_SEURAT_EXPECT` and `tools/compat-matrix.R` |
+| Status labels | `VERIFIED` / `NOT VERIFIED (skips)` / `FAILED` | same |
+| Dependencies | projectData from CRAN; monocle3 pinned in the CI checkout, BPCells at main's HEAD | projectData from CRAN; BPCells `Remotes` pinned in DESCRIPTION |
+| Historical fixtures | separate job and package (`projectData.monocle3.testdata`) | none yet |
+
+A configuration is called verified in a README or release note only when its
+strict run (or the `R CMD check` job) has actually passed.
+
 Reproduce a configuration locally (each takes about 7 minutes after the libraries exist):
 
 ``` sh
