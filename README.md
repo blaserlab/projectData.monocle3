@@ -50,8 +50,24 @@ package work without them; *authoring* and *opening* a CDS need both and fail wi
 a message naming the missing package. Authors also need `Matrix` if their counts
 are sparse.
 
-There is no R-universe build yet. On any route, `monocle3` and `BPCells` remain a
-separate GitHub installation.
+**Alternative: the blaserlab R-universe.** It hosts the adapter, `BPCells` and
+`monocle3`, so one call installs the whole stack. Bioconductor's repositories are
+needed for monocle3's dependencies, and HDF5 headers are still required when
+packages are compiled from source (no Linux binary exists for every R version):
+
+``` r
+install.packages(
+  c("projectData.monocle3", "BPCells", "monocle3"),
+  repos = c(
+    "https://blaserlab.r-universe.dev",
+    BiocManager::repositories()
+  )
+)
+```
+
+This route was verified once, on Linux with R 4.5.2 and an empty library
+(everything compiled from source, `projectData` 0.1.0 from CRAN). See
+`tools/release/RELEASE-0.1.0.md` for what was and was not checked.
 
 ## Creating a data package
 

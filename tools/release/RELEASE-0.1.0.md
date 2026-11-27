@@ -2,7 +2,7 @@
 
 Proposed tag: `v0.1.0`, created only after the maintainer approves, on the commit
 that contains these changes and after the Actions workflow has passed on that
-exact commit. No tag, GitHub release or R-universe publication has been made.
+exact commit. No tag or GitHub release has been made; the adapter, BPCells and monocle3 are built on the blaserlab R-universe (see below).
 
 ## Install (final commands)
 
@@ -77,25 +77,47 @@ experimental upstream.
 
 ## R-universe
 
-Status: **Expected to work for the adapter alone; not ready for the Monocle stack.**
+Status: **Verified for the Monocle stack on Linux R 4.5.2 (source install); other platforms not tested.**
 
 * Repository is public, `DESCRIPTION` is valid, license is `MIT + file LICENSE`
   (GitHub shows "Other" because `LICENSE` is the two-line CRAN stub; the MIT text is
   in `LICENSE.md`).
-* The adapter's only hard dependency is `projectData`, on CRAN (verified by a clean
-  install into an empty library); the `no-stack` CI job verifies that it builds and
-  checks without monocle3 and BPCells (skips only).
-* **Blocker for the Monocle stack in the existing `blaserlab` universe:** its
-  `packages.json` lists BPCells as `https://github.com/bnprks/BPCells` without
-  `"subdir": "r"`, and its builds of BPCells and monocle3 currently fail
-  (https://github.com/r-universe/blaserlab/actions/runs/45384380124 and
-  `.../45384407201`: "dependency BPCells is not available for package monocle3").
-  `tools/release/r-universe-packages.json` is the proposed addition
-  (projectData.monocle3, and BPCells with `subdir` and a tag). Edit the
-  `blaserlab/universe` repository by hand; nothing there was changed. Whether a
-  universe resolves `Remotes` for Suggests during `R CMD check` is unverified.
-* Not verified: any hosted build. Do not call it "Verified on R-universe" until one
-  succeeds and `install.packages("projectData.monocle3", repos = c("https://blaserlab.r-universe.dev", "https://cloud.r-project.org"))` works.
+* The adapter's only hard dependency is `projectData`, on CRAN; the `no-stack` CI job
+  verifies that it builds and checks without monocle3 and BPCells (skips only).
+* **Registry change (2026-11-27):** `blaserlab/blaserlab.r-universe.dev` commit
+  `140e9e0` ("Configure BPCells and projectData.monocle3 for R-universe") set
+  `"subdir": "r"` on the existing BPCells entry (tracking the default branch, no
+  `branch`) and added `projectData.monocle3`. The earlier proposal
+  `tools/release/r-universe-packages.json` (with `branch: v0.3.1`) was not used; the
+  applied diff is `tools/release/r-universe-packages.patch`.
+* **Cause of the earlier failure:** the universe built BPCells commit `b96a440`
+  (2024-05, 110 commits behind `main`) which fails on GCC 15.2 in `libdivide.h`;
+  monocle3 then failed with "dependency BPCells is not available". After the change
+  BPCells builds `5f2a5d2` (0.3.1) from `r/`.
+* **Hosted builds** (source packages and binaries published; blaserlab universe):
+
+  | Package | Version / commit | Hosted status |
+  |---|---|---|
+  | BPCells | 0.3.1, `5f2a5d2`, `RemoteSubdir: r` | success; binaries for Linux, macOS, Windows. Per-platform check jobs report an examples error (`UseMethod("colVars")`), upstream; the Wasm build fails in `hdf5.h`. |
+  | monocle3 | 1.4.27, `536f103` | success (published 22:59Z, after BPCells; it was not rebuilt automatically, the dependents-trigger job was skipped) |
+  | projectData.monocle3 | 0.1.0, `ea36cd7` | success |
+
+  `ea36cd7` is the commit the universe built. It predates later local working-tree
+  changes; rebuild status for the final release commit is unverified.
+* **Clean-library verification** (Linux, R 4.5.2, empty library, repos: blaserlab
+  universe plus `BiocManager::repositories()`, everything compiled from source):
+  `projectData.monocle3` 0.1.0, `BPCells` 0.3.1 (`RemoteSubdir: r`), `monocle3` 1.4.27
+  and `projectData` 0.1.0 (CRAN) installed with no errors. The self-contained `e2e`
+  tests (strict, `PDM3_INTEGRATION_TESTS=true`, from a scratch copy of the source,
+  libraries only from the clean library, no historical fixtures) gave 30 tests, 1,232
+  expectations, 0 failures, 0 errors, 0 skips, 0 warnings. They cover authoring with
+  `save_monocle_cds()`, building and installing the generated package, retrieval in
+  fresh processes, and counts/metadata/dimensions after reconstruction; the
+  work-directory assertions were not inspected individually.
+* Not verified: installation of the hosted Linux binaries (R 4.6.2/4.7.0), macOS or
+  Windows binaries; the hosted binaries of BPCells/monocle3 on any platform; the
+  universe's "Update universe" sync still fails (ChrAccR/ChrAccRex 401 and an
+  "Update submodules" error), unrelated to this change.
 
 ## Release checklist
 
@@ -103,7 +125,7 @@ Status: **Expected to work for the adapter alone; not ready for the Monocle stac
 2. Push; wait for `R-CMD-check` to pass on all five jobs for that commit; update the
    README table (run id and commit) if it differs from `d3f2683`.
 3. Dispatch `compat-matrix` once (never run); record the result or adjust the README.
-4. Update the universe `packages.json` (see above); wait for its build.
+4. Done (2026-11-27): universe `packages.json` updated and built (see above); recheck the hosted build after the release commit is pushed.
 5. Tag `v0.1.0`, publish the release with the notes above.
 6. Afterwards, bump to `0.1.0.9000` and add a NEWS heading.
 
@@ -116,7 +138,7 @@ gert::git_commit("Prepare 0.1.0: vignettes, README, NEWS, docs, minimum projectD
 ## Outstanding manual steps
 
 * Maintainer approval of the version, tag and notes.
-* Universe `packages.json` change and verification of a hosted build.
+* Re-verify the hosted adapter build once the release commit is pushed (the hosted build is `ea36cd7`).
 * Rerunning CI on the release commit (the CI evidence above is for `d3f2683`,
   which predates the documentation changes and the version bump).
 * Done: `projectData (>= 0.1.0)` is required (as Seurat); the former `legacy`
