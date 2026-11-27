@@ -556,8 +556,8 @@ test_that("a staged UMAP index is released after saving and can be deleted", {
   idx <- list.files(saved, pattern = "umap_transform_model_umap\\.idx$", full.names = TRUE)
   expect_length(idx, 1L)
 
-  maps <- mapped_files(basename(stage))
-  if (!is.null(maps)) expect_length(maps, 0L)
+  maps <- mapped_files(normalizePath(stage, winslash = "/"))
+  if (!is.null(maps)) expect_identical(maps, character())
   expect_true(all(file.remove(idx)))
   expect_false(file.exists(idx))
   expect_equal(remove_tree(stage), TRUE)
@@ -574,8 +574,9 @@ test_that("save_monocle_cds() leaves no index mapped inside the package source",
   cds <- fixture_memory_cds()
   save_quiet(cds, "ds", pkg)
   expect_length(stage_dirs(pkg), 0L)
-  maps <- mapped_files(basename(pkg))
-  if (!is.null(maps)) expect_length(maps, 0L)
+  # The full (unique) path: other tests install packages with the same name.
+  maps <- mapped_files(normalizePath(pkg, winslash = "/"))
+  if (!is.null(maps)) expect_identical(maps, character())
 })
 
 test_that("remap_annoy_indexes() warns, and does not fail, for an unusable index", {

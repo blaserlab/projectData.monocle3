@@ -290,7 +290,14 @@ save_monocle_cds <- function(cds, name, package_dir = ".", overwrite = FALSE) {
   keep_stage <- FALSE
   convert_dir <- NULL
   on.exit({
-    if (!is.null(convert_dir)) unlink(convert_dir, recursive = TRUE)
+    if (!is.null(convert_dir)) {
+      # The converted copy keeps its BPCells files open until collected, and
+      # Windows cannot delete open files.
+      converted <- NULL
+      to_save <- NULL
+      gc()
+      unlink(convert_dir, recursive = TRUE)
+    }
     # Only a directory this call created, and never through a link.
     if (!keep_stage && stage_created) remove_tree(stage, within = root)
   }, add = TRUE)
