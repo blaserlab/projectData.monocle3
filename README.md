@@ -1,42 +1,41 @@
 # projectData.monocle3
 
 <!-- badges: start -->
+[![R-CMD-check](https://github.com/blaserlab/projectData.monocle3/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/blaserlab/projectData.monocle3/actions/workflows/R-CMD-check.yaml)
 <!-- badges: end -->
 
-`projectData.monocle3` is an adapter for [projectData](https://github.com/blaserlab/projectData).
-It lets a data package ship a saved, disk-backed Monocle 3 `cell_data_set`
-(CDS) and have `projectData` restore it on first access, without attaching
-Monocle 3 or this package.
+`projectData.monocle3` lets an R data package ship a **Monocle 3
+`cell_data_set` (CDS) whose counts are a BPCells on-disk matrix**, and has
+[projectData](https://github.com/blaserlab/projectData) restore it on first
+access from any package library, without attaching Monocle 3 and without writing
+to the installed package or the working directory.
 
-Current functionality:
+It is an adapter for projectData, which does the general work (registering
+installed data packages, resolving names and conflicts, opening resources lazily,
+caching and retrying). This package adds the Monocle-specific part: how to *save*
+a CDS into a data package so that it is portable, and how to *restore* it.
 
-* `save_monocle_cds()` saves a CDS into a data package source tree, converting
-  in-memory counts to BPCells automatically and keeping counts that are already
-  BPCells-backed as they are.
-* A mandatory, informational `.rda` placeholder is written for every saved CDS,
-  so `data()` and roxygen documentation behave conventionally.
-* The `projectData` manifest is generated and reconciled automatically.
-* The CDS is loaded lazily, on first access, through `projectData::data_attach()`;
-  restored BPCells files go to the working directory managed by `projectData`
-  (session-temporary by default; no persistent cache).
-* In-memory additional assays and alternative experiments are preserved.
-* **Limitation:** assays that are independently disk-backed (BPCells or
-  delayed), in the main CDS or inside any alternative experiment, are rejected
-  at save time because Monocle would store only a reference to files that are
-  not part of the data package.
+## Why use it
 
-A longer, task-oriented guide is in the vignette
-`vignette("using-monocle3-data", package = "projectData.monocle3")`
-(source: [vignettes/using-monocle3-data.Rmd](vignettes/using-monocle3-data.Rmd)).
-For the general adapter mechanism, see `vignette("adapters", package = "projectData")`.
+A CDS with BPCells counts holds a reference to a directory on the author's disk,
+so `save()` or `saveRDS()` produce a file that is useless on another machine.
+Monocle's `save_monocle_objects()` and `load_monocle_objects()` solve this for
+single files, but not for an R package that people install and open through
+`projectData`. This adapter does that, and it makes the authoring safe: in-memory
+counts are converted to BPCells automatically, unsupported storage is refused
+before anything is written, and the manifest and placeholder are generated and
+reconciled for you.
+
+Use it when the counts are large enough to stay on disk and the object will be
+distributed in a data package. If the CDS fits comfortably in memory, ship it as
+an ordinary `.rda` dataset; no adapter is needed.
 
 ## Installation
 
-`projectData` is on CRAN; `monocle3` and `BPCells` are not (monocle3 is on
-GitHub and Bioconductor-dependent, BPCells compiles C++ and needs the HDF5
-headers: `libhdf5-dev` on Debian/Ubuntu, `brew install hdf5 pkg-config` on
-macOS). With `pak`, which also resolves monocle3's Bioconductor dependencies for
-your R version:
+`projectData` is on CRAN. `monocle3` and `BPCells` are GitHub-only (BPCells
+compiles C++ and needs the HDF5 headers: `libhdf5-dev` on Debian/Ubuntu,
+`brew install hdf5 pkg-config` on macOS). `pak` also resolves monocle3's
+Bioconductor dependencies for your version of R:
 
 ``` r
 install.packages("pak")
@@ -48,452 +47,214 @@ pak::pak(c(
 ))
 ```
 
-`monocle3` and `BPCells` are listed in `Suggests` (and `Remotes`) so that
-resource validation and registration work without them; opening a CDS requires
-both and fails with an explicit message if they are missing. The tested
-combinations are in [Compatibility](#compatibility).
+Only `projectData` is a hard dependency. `monocle3` and `BPCells` are listed in
+`Suggests` (and `Remotes`) on purpose: registering, cataloguing and validating a
+data package work without them, while *authoring* and *opening* a CDS need both
+and fail with a message naming the missing package. The adapter is not on CRAN
+or R-universe yet.
 
-**R-universe.** The package itself builds and installs from a universe because
-its hard dependencies (`projectData`, base packages) are on CRAN. `monocle3` and
-`BPCells` are GitHub-only `Suggests`: whether a universe resolves `Remotes` for
-check-time Suggests has not been verified here, so without them in the same
-universe the end-to-end tests are skipped there (ordinary mode) and the
-universe check verifies nothing about the Monocle stack. The CI workflows in
-`.github/workflows/` are the verification, not the universe build.
+| You want to... | You need |
+|---|---|
+| Install and register the adapter, validate resources | `projectData`, `projectData.monocle3` |
+| Open (reconstruct) a CDS | the above, plus `monocle3`, `BPCells` (monocle3 brings `SingleCellExperiment` and `SummarizedExperiment`) |
+| Author a data package | the above, plus `Matrix` if your counts are sparse |
+| Run the tests or build the vignettes | the above, plus `testthat`, `withr`, `pkgload`, `knitr`, `rmarkdown` |
 
-## Using a data package that ships a CDS
+## Author a data package
+
+In the source directory of a data package (the one with `DESCRIPTION`):
 
 ``` r
-library(projectData)
-data_attach("my.datapkg")   # registers; reads nothing
-human_cds <- data_get("human_cds")   # first access: validates, then opens
+projectData.monocle3::save_monocle_cds(cds, name = "my_cds", package_dir = ".")
 ```
 
-There is no `library(projectData.monocle3)`. The data package's manifest names
-the adapter, and `projectData` loads its namespace (without attaching it) on
-first access of an object that needs it.
+This writes, without modifying `cds`:
 
-## Authoring a data package
+``` text
+data/my_cds.rda                  placeholder (prints instructions in base R)
+inst/extdata/my_cds/             native monocle3::save_monocle_objects() directory
+inst/projectData/manifest.dcf    entry for my_cds (created or reconciled)
+```
 
-Minimal workflow:
+Then document `"my_cds"` in `R/data.R` (never edited for you), run
+`devtools::document()`, add `projectData.monocle3` to the package's `Suggests`,
+and install the package. `write_monocle_manifest()` re-reconciles the manifest
+with what is on disk and is idempotent. Saving is staged, verified with the
+loader's own validation and rolled back on failure; `overwrite = TRUE` replaces
+only a resource this package can show it wrote. The step-by-step version,
+including building and installing, is `vignette("authoring-monocle3-data")`.
 
-``` r
-projectData.monocle3::save_monocle_cds(
-  cds,
-  name = "example_cds",
-  package_dir = "."
+### Why does the package contain a placeholder `.rda` object?
+
+Disk-backed Monocle3 `cell_data_set` (CDS) objects cannot be distributed as conventional `.rda` files because they depend on external BPCells matrix files. Instead, `projectData.monocle3` stores the CDS and its backing files under `inst/extdata/` and reconstructs the object on demand through projectData.
+
+The accompanying `.rda` file is a **placeholder, not the actual CDS**. It serves two purposes:
+
+1. **Standard R dataset discovery:** The placeholder allows the dataset to appear in conventional R package listings, such as `data(package = "myDataPackage")`, and to have documentation accessible through `?dataset_name`.
+2. **Guidance for users:** If someone loads the placeholder using `data("dataset_name")`, its contents explain how to access the actual CDS through projectData.
+
+To retrieve the real object, use:
+
+```r
+projectData::data_attach("myDataPackage")
+# The CDS is now available as dataset_name
+
+# Alternatively, retrieve it directly:
+cds <- projectData::data_get(
+  "dataset_name",
+  package = "myDataPackage"
 )
 ```
 
-then, after documenting the dataset and installing the package:
+The manifest tells projectData to load the disk-backed CDS rather than the placeholder. Loading the placeholder explicitly with `data()` can mask an already attached CDS, so use the projectData interfaces for accessing the actual dataset.
+
+This approach preserves compatibility with familiar R package discovery and documentation conventions while allowing large, disk-backed datasets to be distributed without embedding their expression matrices in `.rda` files.
+
+## Use a data package
 
 ``` r
 projectData::data_attach("myDataPackage")
-example_cds
+projectData::data_catalog()        # metadata only: nothing is opened
+my_cds                             # first access restores the CDS
+projectData::data_get("my_cds", package = "myDataPackage")   # no attaching
 ```
 
-Ordinary `data("example_cds")` retrieves only an informational placeholder, not
-the CDS.
+No `library(projectData.monocle3)` is needed: the manifest names the adapter and
+projectData loads it when the object is first used. The restored CDS keeps
+working after `data_detach()`. See `vignette("using-monocle3-data")`.
 
-In more detail: from the root of the data package source directory, one call saves the CDS,
-writes the placeholder and registers the resource:
+`data("my_cds")` loads only the `.rda` **placeholder**, a character vector that
+explains itself; it is not the CDS. Resolution does not depend on it: the
+manifest takes precedence.
 
-``` r
-projectData.monocle3::save_monocle_cds(
-  cds_main_adults,                  # a monocle3 cell_data_set
-  name = "cds_main_adults",
-  package_dir = ".",
-  overwrite = FALSE
-)
-```
+## What is supported
 
-This creates
+| Representation | Handling |
+|---|---|
+| `counts` as a BPCells directory matrix (`MatrixDir`) | Saved as it is, through native Monocle saving |
+| `counts` as `dgCMatrix` / `dgTMatrix` or a BPCells in-memory matrix | Converted to BPCells automatically, on a copy |
+| In-memory alternative assays and alternative experiments, metadata, reductions | Retained |
+| A secondary assay stored on disk (BPCells, HDF5, `DelayedArray`), anywhere in the object | **Refused** before anything is written |
+| `counts` as a dense matrix, `DelayedMatrix`, HDF5-backed BPCells | **Refused** before anything is written |
+| HDF5 or tar saves, in-memory-counts saves, several CDS in one resource | Not supported |
 
-```
-data/cds_main_adults.rda                 placeholder (one classed character vector)
-inst/extdata/cds_main_adults/            native monocle3::save_monocle_objects() directory
-inst/projectData/manifest.dcf            entry added or updated
-```
+Unsupported storage is refused, never silently converted or left dangling.
+`vignette("storage")` explains the details and limits.
 
-Then document the dataset the usual way in `R/data.R` (the function never edits
-that file, and tells you if no topic is found), keep the generating script in
-`inst/data-raw/` if you like, and rebuild the package:
+## What loading does
 
-``` r
-#' Example disk-backed Monocle dataset
-#'
-#' A synthetic single-cell dataset.
-#'
-#' @format A Monocle 3 cell_data_set with BPCells-backed counts.
-#' @details Access using projectData::data_attach().
-"cds_main_adults"
-```
+* **First access only.** projectData validates the installed directory (no matrix
+  data is read), then the adapter calls `monocle3::load_monocle_objects()`.
+* **Native loading copies.** Monocle copies the BPCells matrix, and a second,
+  row-ordered copy that it keeps as the `counts_row_order` assay, into a working
+  directory that projectData allocates for that opening under the session
+  temporary directory. The installed package is read-only and never modified;
+  `setwd()` is never called.
+* **Detaching deletes nothing.** A retained CDS keeps working until the session
+  ends, when Monocle removes the copies. The UMAP index, if any, is the exception:
+  it is read from the installed file, so do not reinstall the data package while
+  you use the object.
+* **Disk-backed is not RAM-free**, and it costs temporary disk space (about two
+  copies of the matrix per opening). There is no persistent cache in this
+  version.
 
-``` r
-devtools::document()
-devtools::install()
-```
+## How it differs from projectData.Seurat
 
-Add `projectData.monocle3` to the data package's `Suggests` (and `Remotes`).
+The two adapters share the projectData contract and similar entry points, but not
+the persistence mechanism.
 
-Points to know:
+| | projectData.monocle3 | projectData.Seurat |
+|---|---|---|
+| Save | `save_monocle_cds()` | `save_seurat_object()` |
+| Manifest | `write_monocle_manifest()` | `write_seurat_manifest()` |
+| Persistence | Monocle's native save and load | The adapter's own copy of each BPCells directory, plus `object.rds` |
+| First access | Copies the matrix into the work directory | Reads from the installed directories, copies nothing |
+| In-memory counts | Converted automatically | Must already be BPCells directories |
+| Storage report | none | `seurat_storage_report()` |
 
-* The saved counts are always a BPCells on-disk matrix, and conversion is
-  automatic. In-memory counts (`dgCMatrix`/`dgTMatrix`, or a BPCells matrix held
-  in memory) are converted on a *copy* of the CDS with
-  `monocle3::convert_counts_matrix()` (only `counts`; the intermediate matrix
-  goes to a session temporary directory that is removed afterwards). Counts that
-  are already BPCells-backed are saved as they are, without reconversion. Any
-  other representation (a dense matrix, `DelayedMatrix`, HDF5-backed BPCells)
-  is an error raised before anything is written. Monocle adds its internal
-  `counts_row_order` assay to a converted copy; it is derived from the counts
-  and is not a separate assay.
-* Extra in-memory assays (for example `logcounts`, `spliced`) and alternative
-  experiments (`SingleCellExperiment::altExp()`, e.g. ADT and CRISPR) are stored
-  with the CDS and are tested to survive a save and a load for synthetic data;
-  other extensions are not assumed to be supported.
-* The manifest is reconciled with the package on every save (see below):
-  entries whose saved directory or placeholder was deleted are removed.
-* An existing dataset or placeholder is replaced only with `overwrite = TRUE`,
-  and only if this package can show it wrote the existing directory: a native
-  Monocle file index, a manifest entry of this loader or a recognized
-  placeholder, at least two of the three, with nothing else in the directory. A
-  directory that merely contains a file named like a Monocle save, a directory
-  that another loader's manifest entry claims, and a `data/<name>.rda` that
-  holds anything other than a placeholder are never replaced (see
-  `?save_monocle_cds`). Files are built in a hidden staging directory
-  (`.projectData.monocle3-stage-*`), checked with the loader's own validation, and
-  only then moved into place; if that fails the previous files are restored. It
-  is not a filesystem transaction (a crash can leave the staging directory
-  behind).
-* Independently disk-backed assays are **rejected**, with an error raised before
-  anything is written. Monocle saves such an assay (for example a BPCells
-  `spliced` matrix, or the `counts` of an ADT alternative experiment) only as a
-  reference to its original directory, which does not exist for the users of the
-  package. All alternative experiments are inspected, at any nesting depth, and
-  the error lists each offender with its location, such as
-  `altExp 'ADT' / altExp 'normalized' / assay 'counts'`. Only the main CDS's
-  Monocle-managed `counts` (and the derived `counts_row_order`) may be on disk.
-  Convert the offending assays to in-memory matrices, or drop them; the package
-  never does this automatically because it could need a lot of memory.
-  `DelayedArray` assays and BPCells wrappers not known to be in memory are also
-  refused; other exotic matrix classes are not checked.
-* The caller's CDS is never modified, and nothing is written to the working
-  directory.
+## Troubleshooting
 
-### What users of the package see
-
-``` r
-data("cds_main_adults", package = "myDataPackage")
-```
-
-only loads the **placeholder**, a named character vector that prints its own
-instructions with base R (no `projectData` needed): it is not the CDS, remove it
-with `rm(cds_main_adults)`, then attach the package. If it masks the real
-object, remove it and use:
-
-``` r
-projectData::data_attach("myDataPackage")
-cds_main_adults    # resolved by the adapter, opened on first access
-```
-
-### Registering directories saved by other means
-
-If you saved a CDS yourself (`save_monocle_objects(cds, "inst/extdata/human_cds",
-archive_control = list(archive_type = "none"))`, counts BPCells-backed) and
-created a matching `data/human_cds.rda` placeholder (a classed placeholder from
-`save_monocle_cds()` or the historical string `"This is a placeholder
-object."`), register it from the package source directory with:
-
-``` r
-projectData.monocle3::write_monocle_manifest(
-  package_dir = "."
-)
-```
-
-This is a package-authoring step; installed packages never generate manifests.
-It finds each saved CDS directory under `inst/extdata/` that has a matching
-placeholder in `data/` (ordinary `.rda` datasets and other directories are
-ignored), and adds or updates its manifest entry.
-
-It also **reconciles** the manifest: the saved directories and placeholders
-that are present are the source of truth for the entries owned by this package
-(loader `projectData.monocle3::cds`). If you delete a saved directory (or its
-placeholder) while developing, the next call removes the stale entry instead of
-failing:
-
-```
-projectData.monocle3: manifest updated
-  Added: cds_bpcells_a
-  Removed stale: cds_bpcells_b
-  Preserved: 2 unrelated resources
-```
-
-Nothing is printed when nothing changes. Entries of other loaders are kept
-unchanged and never repaired or removed (a resource or object name owned by
-another adapter is reported as a conflict and left alone, and an invalid entry of
-another adapter makes the call fail rather than be edited). A manifest that
-cannot be parsed is never overwritten. Reconciliation edits only the manifest:
-it never deletes a saved CDS directory or a placeholder. If no entry remains,
-the manifest file is removed. Running it again changes nothing, and no CDS is
-loaded or BPCells file created. See `?write_monocle_manifest` for details.
-`save_monocle_cds()` runs the same reconciliation after it has saved the CDS.
-
-### The manifest it writes
-
-The result is the same file you could write by hand. `Source` is the
-**installed** layout (`extdata/...`, not `inst/extdata/...`):
-
-```
-ManifestVersion: 1
-
-Resource: human_cds
-Loader: projectData.monocle3::cds
-Source: extdata/human_cds
-Objects: human_cds
-AdapterPackage: projectData.monocle3
-AdapterExport: projectData_loaders
-RecordedClass: cell_data_set
-HelpTopic: human_cds
-```
-
-(`AdapterExport: projectData_loaders` is the default, so the generated file
-omits that line; it means the same.) Each resource must declare exactly one
-object. Add `projectData.monocle3` to the data package's `Suggests` (and
-`Remotes`).
-
-## What the loader does
-
-* **validate** (at registration if the loader is already registered, and
-  before every uncached open): checks that the `Source` directory has a
-  `file_index.rds` written by `save_monocle_objects()`, exactly one rds-format
-  CDS, exactly one BPCells matrix directory, relative paths only, and that every
-  listed file exists. It does not build the CDS or read matrix data. CDS saved
-  with in-memory counts or `hdf5_assays = TRUE` are rejected with an explanation.
-* **open**: calls `monocle3::load_monocle_objects()` on the installed directory
-  with `matrix_control$matrix_path` set to the unique `paths$work_dir` that
-  `projectData` allocated, then checks the result is a valid `cell_data_set`.
-
-### Where the files go
-
-Verified with monocle3 1.4.27 and BPCells 0.3.0:
-
-* `load_monocle_objects()` does not use the installed BPCells directory in
-  place. It **copies** it. `matrix_path` must already exist; monocle3 creates
-  uniquely named `monocle.bpcells.<date>.<id>.tmp` children in it, so
-  `paths$work_dir` is passed directly (no extra subdirectory). Two copies are
-  made: the counts and a row-ordered copy kept in the `counts_row_order` assay.
-* Without `matrix_path`, the default is `"."`, the working directory. The
-  adapter always sets it, never calls `setwd()`, and nothing is written to
-  `getwd()`.
-* monocle3 removes those directories when R exits (its own exit hook). The
-  adapter never deletes them. The work directory is under the session
-  temporary directory.
-* `load_monocle_objects()` calls `SummarizedExperiment` generics unqualified,
-  so monocle3 (and its `Depends`) must be attached while it runs. The adapter
-  attaches monocle3 for that one call and restores the search path afterwards.
-  You will still need `library(monocle3)` to use monocle3 functions on the
-  result.
-
-### Symbolic links
-
-monocle3 and BPCells follow symbolic links when they copy a matrix directory
-and do not check where a link leads, so this package refuses them instead. The
-loader refuses a resource in which anything inside the saved directory is a
-symbolic link (internal, escaping or dangling), whose BPCells directory is not
-flat or lacks the files BPCells writes, or whose index lists an absolute path, a
-`..` path or a directory where a file is expected. `save_monocle_cds()` applies
-the same rule to your original counts directory before it stages anything (error
-class `projectData.monocle3_unsafe_backing`) and never replaces a resource that
-is, or contains, a link. The library, the package directory and parents such as
-`inst/extdata` may themselves be symbolic links. Resources written by
-`save_monocle_cds()` never contain links. Base R cannot tell a FIFO or device
-file from a regular file, so those are not detected.
-
-### Independence from the installed package
-
-The restored counts and the row-ordered copy live under `work_dir`, so
-removing the installed data package does not affect them. The UMAP
-nearest-neighbour index is different: Annoy memory-maps it from the installed
-file. A test removes the installation on Linux and confirms
-`preprocess_transform()` and `reduce_dimension_transform()` (which use the PCA
-model and the UMAP index) still work, since an unlinked file stays mapped.
-That is platform behaviour, not a guarantee: do not replace or truncate an
-installed package in place while a CDS from it is in use, and on Windows the
-installation cannot be removed while the index is mapped. The CDS also records
-the original install path as model-identity metadata; nothing reads it.
-PCA/other reduction models stored in the CDS object itself are in memory.
-The default (`"counts"`) assay is the one that is loaded from disk. Other
-in-memory assays and alternative experiments are tested with synthetic data.
+| Symptom | Cause | What to do |
+|---|---|---|
+| Error naming `monocle3` or `BPCells` as not installed | Opening and authoring need them | Install them (see above), then `projectData::data_retry("<collection>")` |
+| Catalog shows `unavailable-loader` | The adapter is not installed | Install `projectData.monocle3`, then `data_retry()` |
+| "required file(s) missing", or a validation error naming `file_index.rds`, in-memory counts, HDF5 or a symbolic link | Damaged installation, or a resource not written by `save_monocle_cds()` | Reinstall the data package; re-save if you are the author |
+| An opening failed once and keeps failing | projectData caches failures | Fix the cause, then `data_retry("<collection>")` |
+| `data("name")` prints text, not an object | The `.rda` placeholder | `rm(name)`, then `data_attach("<package>")` |
+| `projectData.monocle3_external_assay` at save | A secondary assay is on disk | Convert it to an in-memory matrix, or drop it |
+| `projectData.monocle3_exists` | The name is already saved | `overwrite = TRUE`, or choose another `name` |
+| `projectData.monocle3_not_owned` / `_ambiguous_ownership` | The existing files cannot be shown to be written by this package | Choose another `name`, or move the files yourself; nothing was changed |
+| `projectData.monocle3_conflict` / `_manifest_error` | The name belongs to another loader's entry, or the manifest is invalid | Rename the resource, or fix `inst/projectData/manifest.dcf` |
+| `projectData.monocle3_unsafe_backing` | A symbolic link or malformed BPCells directory in your counts | Write the counts to a fresh directory with `BPCells::write_matrix_dir()` |
+| A `.projectData.monocle3-stage-*` directory in the package | R was killed during a save | Safe to delete once the package is in the state you want; it may hold the previous files |
 
 ## Compatibility
 
-Status of each configuration:
+Status per configuration, from `tools/compat-matrix.R` (strict suite: no skip other
+than a labelled platform skip) or a GitHub Actions run, and `R CMD check`:
 
-* **Verified**: the complete required integration suite passed in that exact
-  configuration (`tools/compat-matrix.R`: every test run, no skip other than a
-  labelled platform skip, declared versions found) and, where stated, `R CMD check`.
-* **Expected**: technically plausible, but not fully tested.
-* **Unsupported**: known incompatibility or outside the supported scope.
+* **Verified**: tested successfully in that exact configuration.
+* **Expected**: technically plausible, not tested.
+* **Unsupported**: known not to work, or out of scope.
 
-Installing a dependency successfully, or a run in which tests were skipped, is
-not verification. The workflows in `.github/workflows/` have **not been run
-yet**, so no Windows or macOS configuration is verified.
+GitHub Actions run
+[46025240109](https://github.com/blaserlab/projectData.monocle3/actions/runs/46025240109)
+(commit `d3f2683`) ran the strict self-contained suite, then `R CMD check --as-cran`
+(including vignettes), on every platform below, with projectData 0.1.0, monocle3
+1.4.27 (`536f103`) and BPCells 0.3.1 (`5f2a5d2`):
+
+| R / Bioconductor | OS | Strict suite | `R CMD check` |
+|---|---|---|---|
+| 4.6.2 / 3.24 | Ubuntu 26.04 | 239 tests, 2,369 expectations, 0 failures | Status OK |
+| 4.5.3 / 3.22 | Ubuntu 26.04 | 239 tests, 2,369 expectations, 0 failures | Status OK |
+| 4.6.2 / 3.24 | macOS 26 arm64 | 239 tests, 2,367 expectations, 0 failures | Status OK |
+| 4.6.2 / 3.24 | Windows Server 2022 | 239 tests, 2,197 expectations, 0 failures; 18 labelled platform skips | Status OK |
+
+Each run also skipped the 15 historical-fixture tests (the fixture package is not
+installed in that job). The Windows platform skips are the symbolic-link tests
+(`Sys.readlink()` does not report links there) and the test that deletes an
+installation while a UMAP index is mapped. A fifth job, without the Monocle stack,
+checks that the package installs, builds and checks with skips only.
 
 | projectData | monocle3 | BPCells | R / Bioconductor | OS | Status |
 |---|---|---|---|---|---|
-| 0.1.0 (CRAN) | 1.4.27 | 0.3.1 | 4.5.2 / 3.22 | Linux (Ubuntu 22.04) | Verified: 235 tests, 2,548 expectations, 0 failures, 0 skips, with the historical fixtures |
-| 0.1.0 (CRAN) | 1.4.27 | 0.3.0 (release tag) | 4.5.2 / 3.22 | Linux | Verified: same counts, with the historical fixtures |
-| 0.0.0.9008 (GitHub `31ff415`) | 1.4.27 | 0.3.0 | 4.5.2 / 3.22 | Linux | Verified: same counts, with the historical fixtures (the stack of the Issue 3 report) |
-| 0.1.0 (CRAN) | 1.4.27 | 0.3.0 development snapshot (`f2026c3`) | 4.5.2 / 3.22 | Linux | Verified: `R CMD check --as-cran` Status: 2 NOTEs, no errors or warnings (the NOTEs are the development version number with GitHub-only `Remotes`/`Suggests`, and "unable to verify current time"); 2,332 expectations passed, 0 failures, 15 historical-fixture skips (fixtures not installed in that run) |
-| 0.1.0 | 1.4.27 | 0.3.1 | release | Windows | Expected: workflow written, never run |
-| 0.1.0 | 1.4.27 | 0.3.1 | release | macOS | Expected: workflow written, never run |
-| 0.1.0 | 1.4.27 | 0.3.1 | 4.5 | Linux (GitHub Actions) | Expected: workflow written, never run |
-| 0.0.0.9005 to 0.0.0.9007 | any | any | any | any | Expected: the declared minimum `0.0.0.9005` has not been run; 0.0.0.9008 and 0.1.0 have |
-| any | other 1.4.x | 0.3.x | other R | Linux | Expected |
+| 0.1.0 (CRAN) | 1.4.27 | 0.3.1 | 4.5.2 / 3.22 | Linux (Ubuntu 22.04) | Verified: 235 tests, 2,548 expectations, 0 failures, 0 skips, including the historical fixtures |
+| 0.1.0 (CRAN) | 1.4.27 | 0.3.0 | 4.5.2 / 3.22 | Linux | Verified: same, with the historical fixtures |
+| 0.0.0.9008 (GitHub) | 1.4.27 | 0.3.0 | 4.5.2 / 3.22 | Linux | Verified: same, with the historical fixtures (the declared minimum) |
+| other 1.4.x | | 0.3.x | other R | any | Expected |
 | any | any | BPCells main | any | Linux | Expected: allowed-failure CI job, never run (`all_matrix_inputs()` is experimental upstream) |
-| any | any | counts or alternative assays in HDF5, `DelayedArray` or BPCells storage; tar archives | any | any | Unsupported (refused before anything is written, or rejected on load) |
+| any | any | counts or secondary assays in HDF5, `DelayedArray` or BPCells storage; tar archives | any | any | Unsupported (refused, or rejected on load) |
 
-The symbolic-link, read-only installation, relocation between libraries and
-fresh-process tests are part of the suite, so each *Verified* Linux row includes
-them. On Windows they run only where links can be created and `Sys.readlink()`
-reports them (probed, not assumed), and the read-only test cannot make
-directories read-only there; this is untested.
+The Linux rows were measured at an earlier commit and are re-run by
+`.github/workflows/compat-matrix.yaml`, which has not yet run on GitHub. The
+historical-fixture job, and Windows or macOS runs of other stacks, are therefore
+unverified.
 
-Assumptions about monocle3 and BPCells that the package cannot control (the
-layout written by `save_monocle_objects()`, the BPCells matrix directory files, the
-`matrix_control` interface of `load_monocle_objects()`) are stated by
-`test-e2e-dependency-contract.R`; an upgrade that changes one fails there by name.
-The supported BPCells directory has `version`, `storage_order`, `shape`,
-`row_names`, `col_names`, `idxptr` and `val` or `val_data`, flat, with no symbolic links.
+Assumptions about monocle3 and BPCells that this package cannot control (the
+layout written by `save_monocle_objects()`, the BPCells directory files, the
+`matrix_control` interface of `load_monocle_objects()`, and BPCells'
+experimental `all_matrix_inputs()`) are stated by `test-e2e-dependency-contract.R`;
+an upgrade that changes one fails there by name.
 
-## Development
+## Documentation
 
-``` r
-devtools::test()   # needs monocle3, BPCells, SingleCellExperiment, SummarizedExperiment, withr
-```
+* `vignette("authoring-monocle3-data")`: create and install a data package.
+* `vignette("using-monocle3-data")`: discover, load, detach, troubleshoot.
+* `vignette("storage")`: what is stored, what loading copies, lifetimes, limits.
+* `?save_monocle_cds`, `?write_monocle_manifest`, `?projectData_loaders`:
+  reference, including condition classes.
+* projectData: `vignette("projectData", package = "projectData")` and
+  `vignette("adapters", package = "projectData")`.
+* Contributing, tests and CI: [tools/README.md](tools/README.md).
 
-### Integration tests
+## Limitations
 
-There are two families of integration tests with separate prerequisites and
-separate strictness switches.
-
-| | Self-contained end-to-end tests | Historical compatibility tests |
-|---|---|---|
-| Files | `test-e2e-*.R`, `test-save-*.R`, `test-integration.R`, `test-filesystem.R` (real-CDS parts) | `test-historical-*.R` |
-| Data | generated by the current code in a temporary package | resources written by an earlier version, in the installed package `projectData.monocle3.testdata` |
-| Needs | the Monocle stack and `projectData` | the fixture package (and, for one file, its source tree) |
-| Strict with | `PDM3_INTEGRATION_TESTS=true` | `PDM3_HISTORICAL_TESTS=true` |
-
-A contributor needs nothing beyond the declared runtime dependencies
-(`projectData`, `monocle3`, `BPCells`, `SingleCellExperiment`,
-`SummarizedExperiment`, `Matrix`, `withr`; `pkgload` when running under
-`devtools::test()`) to verify the whole workflow:
-
-``` sh
-NOT_CRAN=true PDM3_INTEGRATION_TESTS=true Rscript -e 'devtools::test(filter = "e2e", reporter = "summary")'
-```
-
-The `test-e2e-*.R` files (about 2.5 minutes, 1,174 expectations) do this, in a
-throwaway directory removed at the end of the run (about 100 KB of data, plus the
-temporary libraries):
-
-1. build a small synthetic CDS (24 x 16 and 30 x 12; sparse integer counts,
-   cell and gene metadata, `logcounts` and `spliced` assays, an ADT alternative
-   experiment, PCA and UMAP reductions with fixed values) with public monocle3,
-   SingleCellExperiment and BPCells APIs (`helper-synthetic.R`);
-2. scaffold a data package (`DESCRIPTION`, `R/data.R`, `man/`) and author two
-   resources with `save_monocle_cds()`: one from in-memory counts (converted
-   automatically), one from BPCells-backed counts;
-3. `R CMD build` the package and `R CMD INSTALL` the tarball into two separate
-   temporary libraries (names with spaces and non-ASCII characters where the
-   locale allows);
-4. check discovery, reconstruction, `data_attach()`/`data_detach()`, work
-   directories and retained objects in this session, the same package in each
-   library (and through a symbolic link) in fresh R processes, independence
-   from the authoring directory, and damaged installations with `data_retry()`
-   recovery on disposable copies.
-
-Only the live package libraries are read, never modified. Fresh processes
-(`run_child()` in `helper-synthetic.R`) load the adapter with `pkgload` under
-`devtools::test()` and from the installed package otherwise.
-
-### Continuous integration
-
-| Workflow | What it runs |
-|---|---|
-| `R-CMD-check.yaml` | Ubuntu, Windows, macOS (R release) and Ubuntu (R 4.5): `tools/verify-stack.R`, the strict suite (`tools/compat-matrix.R current`, `PDM3_INTEGRATION_TESTS=true`), then `R CMD check --as-cran`. A fifth job checks without the Monocle stack (skips expected). |
-| `compat-matrix.yaml` | Linux, weekly and on demand: the `legacy` and `bpcells_030` configurations; the historical fixtures; BPCells `main` (allowed failure). |
-
-CI installs `projectData` from CRAN, and `monocle3` and `BPCells` from GitHub at
-the monocle3 tag in the workflow's `MONOCLE3_REF` (written into `Remotes` of the
-CI checkout by `tools/ci-pin-remotes.R`; the package's own `Remotes` stay
-unpinned). BPCells cannot be pinned this way: monocle3 lists BPCells unpinned in
-its own `Remotes`, and pak reports a conflict, so CI gets BPCells from its
-default branch (0.3.1 at the time of writing; the run prints its commit). Other
-BPCells versions are tested through `tools/compat-libs.R`. monocle3's Bioconductor dependencies are resolved by `pak` for the R
-version in use. The historical job checks out `projectData.monocle3.testdata` at a
-pinned commit (`TESTDATA_REF`), installs it from that source tree, and the tests
-verify its identity: version floor plus the md5 of every resource's
-`file_index.rds` and `cds_object.rds` (`testdata_fingerprint`), identical to the
-installed copy. The checksum is what matters, not an exact version. Note that
-fixtures contain binary files: check them out without line-ending conversion.
-
-Reproduce a configuration locally (each takes about 7 minutes after the libraries exist):
-
-``` sh
-Rscript tools/compat-libs.R projectdata_cran bpcells_031   # libraries; BPCells compiles (about 10 minutes)
-Rscript tools/compat-matrix.R bpcells_031                  # self-contained suite, strict
-PDM3_TESTDATA_SOURCE=/path/to/projectData.monocle3.testdata \
-  Rscript tools/compat-matrix.R --historical bpcells_031   # plus the historical fixtures
-Rscript tools/compat-matrix.R --list
-```
-
-The runner prints R, OS, Bioconductor and package versions, counts, and a status
-(`VERIFIED`, `NOT VERIFIED (skips)`, `FAILED`); its exit status is 0 only if all
-requested configurations are verified.
-
-### Strictness
-
-By default (both variables unset or `false`) every integration test is optional:
-it skips when a prerequisite is missing (and on CRAN, unless `NOT_CRAN=true`).
-Setting a variable to `true` turns missing prerequisites of *that family* into
-errors (class `projectData.monocle3_integration_prerequisite`), which testthat
-records as failures, so a run cannot look successful because tests were
-skipped. Any other value is an error.
-
-- `PDM3_INTEGRATION_TESTS=true`: the self-contained tests must run. This never
-  requires the fixture package: a missing `projectData.monocle3.testdata` only
-  skips the historical tests, with the reason prefixed `[historical fixtures]`.
-- `PDM3_HISTORICAL_TESTS=true`: the historical tests must run. It requires
-  `projectData.monocle3.testdata` (version 0.0.0.9004 or later) installed with
-  exactly the resources `cds_bpcells_a`, `cds_bpcells_b`, `cds_multiassay`, a
-  manifest registering them with `projectData.monocle3::cds`, `data()` items for
-  them and `ordinary_data`, and the original content (checksums of each
-  resource's `file_index.rds` and `cds_object.rds`; a later version with
-  unchanged resources is accepted). It also requires `PDM3_TESTDATA_SOURCE`
-  pointing at the fixture source tree (no sibling fallback), with the same
-  `inst/extdata` and `inst/projectData` contents as the installed package. The
-  source-dependent tests install a disposable copy of it. The fixtures are never
-  regenerated.
-
-Platform-specific skips (`skip_on_platform()`) remain in strict runs, labelled
-`[strict integration: platform skip]`. The tests `strict ... integration
-prerequisites are met` list every unmet prerequisite at once.
-
-A complete run, from a clean process:
-
-``` sh
-export NOT_CRAN=true PDM3_INTEGRATION_TESTS=true PDM3_HISTORICAL_TESTS=true
-export PDM3_TESTDATA_SOURCE=/path/to/projectData.monocle3.testdata
-
-R CMD INSTALL "$PDM3_TESTDATA_SOURCE"
-Rscript -e 'devtools::test(reporter = "summary", stop_on_failure = TRUE)'
-
-# or, as an installed-package check
-R CMD build . && R CMD check projectData.monocle3_*.tar.gz
-```
-
-Check the reporter summary for skips: in a strict run only platform skips
-should appear. When a fresh-process, build or install step fails, the error
-contains the complete output of the subprocess.
+* Saving is staged and rolled back on failure, but it is not a filesystem
+  transaction: if R is killed during the commit, a hidden
+  `.projectData.monocle3-stage-*` directory may remain.
+* One CDS per resource; no persistent cache; no support for HDF5, `DelayedArray`
+  or on-disk secondary assays.
+* Symbolic-link and file-locking behavior on Windows is covered only as far as the
+  CI run above (links are not testable there).
+* Check the size limits of wherever you distribute a data package: the BPCells
+  files count towards it.

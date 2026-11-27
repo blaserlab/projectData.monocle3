@@ -1,0 +1,12 @@
+[
+  {
+    "package": "projectData.monocle3",
+    "url": "https://github.com/blaserlab/projectData.monocle3"
+  },
+  {
+    "package": "BPCells",
+    "url": "https://github.com/bnprks/BPCells",
+    "subdir": "r",
+    "branch": "v0.3.1"
+  }
+]

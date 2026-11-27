@@ -49,7 +49,7 @@ testdata_cds <- c("cds_bpcells_a", "cds_bpcells_b", "cds_multiassay")
 testdata_ordinary <- "ordinary_data"
 testdata_dims <- list(cds_bpcells_a = c(100L, 40L), cds_bpcells_b = c(80L, 30L),
                       cds_multiassay = c(100L, 40L))
-projectData_min_version <- "0.0.0.9005"
+projectData_min_version <- "0.0.0.9008"
 monocle_stack <- c("monocle3", "BPCells", "SingleCellExperiment",
                    "SummarizedExperiment", "withr")
 

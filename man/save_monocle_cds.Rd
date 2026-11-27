@@ -228,6 +228,17 @@ the placeholder, which prints instructions. The actual CDS is obtained with
 \code{projectData::data_attach("<pkg>")} followed by \verb{<name>}.
 }
 
+\section{Conditions}{
+
+Errors raised before anything is written have class
+\code{projectData.monocle3_save_error} plus one of \verb{_exists} (needs \code{overwrite = TRUE}; also \verb{_damaged} when the existing resource is damaged), \verb{_not_owned},
+\verb{_ambiguous_ownership}, \verb{_conflict}, \verb{_placeholder_not_recognized},
+\verb{_external_assay}, \verb{_unsafe_backing} or \verb{_manifest_error}. A \code{package_dir} that
+is not a package source directory gives
+\code{projectData.monocle3_package_dir_error}. If the commit fails, the previous
+files are restored and the error says so.
+}
+
 \examples{
 \dontrun{
 # In a data package source directory:
@@ -240,5 +251,5 @@ cds_main_adults
 }
 \seealso{
 \code{\link[=write_monocle_manifest]{write_monocle_manifest()}} to register directories saved by other
-means, \code{\link[=projectData_loaders]{projectData_loaders()}}
+means, \code{\link[=projectData_loaders]{projectData_loaders()}}; \code{vignette("authoring-monocle3-data")}
 }

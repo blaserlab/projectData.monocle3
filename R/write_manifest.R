@@ -36,12 +36,14 @@
 #' object is discoverable with [utils::data()] and can be documented in the
 #' usual way. The file is inspected without running anything: its serialized
 #' header is parsed to read the object name and, for a small character vector,
-#' its content. Currently the historical string `"This is a placeholder
-#' object."` is recognized. A CDS without a placeholder is skipped with a
+#' its content. The historical string `"This is a placeholder object."` is
+#' recognized, and so is the classed placeholder that [save_monocle_cds()] writes
+#' (class `projectData_monocle3_placeholder`, whose `object_name` and `package`
+#' attributes must match). A CDS without a placeholder is skipped with a
 #' warning (and, if it already had a manifest entry, that entry is removed as
 #' stale). A `.rda` that holds a real dataset, or that cannot be inspected, is
 #' never treated as a placeholder, and no registration is created for it.
-#' Placeholder files are never created or modified.
+#' This function never creates or modifies placeholder files.
 #'
 #' @section Reconciliation:
 #' The saved directories and placeholders currently in the package are the
@@ -104,6 +106,14 @@
 #' Discovery reads only `file_index.rds`, directory listings and the header of
 #' each placeholder. No CDS is restored, no BPCells matrix is opened and no
 #' working directory is created. `monocle3` and `BPCells` need not be installed.
+#'
+#' @section Conditions:
+#' A manifest that cannot be read or validated, or an invalid entry of another
+#' adapter, stops the call with an error of class
+#' `projectData.monocle3_manifest_error` and leaves the manifest untouched. A bad
+#' `package_dir` gives `projectData.monocle3_package_dir_error`. Skipped
+#' resources and conflicts raise warnings of class `projectData.monocle3_skipped`
+#' and `projectData.monocle3_conflict`.
 #'
 #' @param package_dir Path to the root of a data-package *source* directory
 #'   (the one with `DESCRIPTION`). Defaults to the working directory.

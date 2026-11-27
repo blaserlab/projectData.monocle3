@@ -1,6 +1,6 @@
 Package: projectData.monocle3
 Title: 'projectData' Adapter for Disk-Backed 'monocle3' Cell Data Sets
-Version: 0.0.0.9013
+Version: 0.1.0
 Authors@R: 
     person("Brad", "Blaser", , "bradley.blaser@osumc.edu", role = c("aut", "cre", "cph"),
            comment = c(ORCID = "0000-0002-3168-5423"))
@@ -9,13 +9,14 @@ Description: A loader for the 'projectData' adapter framework. It restores
     matrix from an installed data package, on first access, without attaching
     'monocle3' or 'projectData' to the search path. Restored matrix files are
     placed in the working directory allocated by 'projectData'. For data
-    package authors, it also registers saved CDS directories in the package's
-    'projectData' manifest.
+    package authors, it saves a cell_data_set into a package source tree,
+    converting supported in-memory counts to a 'BPCells' on-disk matrix, and
+    registers it in the package's 'projectData' manifest.
 License: MIT + file LICENSE
 URL: https://github.com/blaserlab/projectData.monocle3
 BugReports: https://github.com/blaserlab/projectData.monocle3/issues
 Depends: R (>= 4.1.0)
-Imports: methods, projectData (>= 0.0.0.9005), stats, utils
+Imports: methods, projectData (>= 0.0.0.9008), stats, utils
 Suggests: BPCells, DelayedArray, knitr, Matrix, monocle3, pkgload, rmarkdown, S4Vectors,
     SingleCellExperiment, SummarizedExperiment, testthat (>= 3.2.0), withr (>= 2.5.0)
 Remotes: github::bnprks/BPCells/r, github::cole-trapnell-lab/monocle3

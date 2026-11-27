@@ -53,7 +53,7 @@ the session temporary directory and is removed by monocle3 when R exits.
 The UMAP nearest-neighbour index, however, is memory-mapped by Annoy
 directly from the installed file. On Linux and macOS the mapping survives
 deletion of the file; on Windows an installed copy cannot be removed while
-it is mapped. See the README for details.
+it is mapped. See \code{vignette("storage")} for details.
 }
 
 \seealso{

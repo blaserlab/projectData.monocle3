@@ -6,8 +6,49 @@
 \alias{projectData.monocle3-package}
 \title{projectData.monocle3: 'projectData' Adapter for Disk-Backed 'monocle3' Cell Data Sets}
 \description{
-A loader for the 'projectData' adapter framework. It restores a saved 'monocle3' cell_data_set whose counts are a 'BPCells' on-disk matrix from an installed data package, on first access, without attaching 'monocle3' or 'projectData' to the search path. Restored matrix files are placed in the working directory allocated by 'projectData'. For data package authors, it also registers saved CDS directories in the package's 'projectData' manifest.
+A loader for the 'projectData' adapter framework. It restores a saved 'monocle3' cell_data_set whose counts are a 'BPCells' on-disk matrix from an installed data package, on first access, without attaching 'monocle3' or 'projectData' to the search path. Restored matrix files are placed in the working directory allocated by 'projectData'. For data package authors, it saves a cell_data_set into a package source tree, converting supported in-memory counts to a 'BPCells' on-disk matrix, and registers it in the package's 'projectData' manifest.
 }
+\details{
+\code{projectData.monocle3} is an adapter for the \pkg{projectData} framework. It
+lets an R data package ship a Monocle 3 \code{cell_data_set} (CDS) whose counts are
+a BPCells on-disk matrix, and has projectData restore it on first access from
+any library, without attaching Monocle 3 or this package. An adapter is needed
+only for such disk-backed objects: a CDS that fits in memory can be shipped as
+an ordinary \code{.rda} dataset.
+
+\strong{Users of a data package} need no function from this package. The data
+package's manifest names the loader \code{projectData.monocle3::cds}
+(\code{\link[=projectData_loaders]{projectData_loaders()}}); use \code{\link[projectData:data_attach]{projectData::data_attach()}} or
+\code{\link[projectData:data_get]{projectData::data_get()}}. Opening a CDS needs monocle3 and BPCells, which
+are suggested, not required, so that registration and validation work
+without them.
+
+\strong{Authors of a data package} use \code{\link[=save_monocle_cds]{save_monocle_cds()}} (save a CDS, write the
+mandatory \code{.rda} placeholder and register the manifest entry, converting
+in-memory counts to BPCells automatically) and \code{\link[=write_monocle_manifest]{write_monocle_manifest()}}
+(reconcile the manifest with the saved directories).
+}
+\section{Vignettes}{
+
+\itemize{
+\item \code{vignette("authoring-monocle3-data")}: create and install a data package.
+\item \code{vignette("using-monocle3-data")}: discover, load, detach and troubleshoot.
+\item \code{vignette("storage")}: what is stored, what loading copies, and lifetimes.
+}
+
+For the adapter mechanism see \code{vignette("adapters", package = "projectData")}.
+}
+
+\section{Condition classes}{
+
+Authoring errors have class \code{projectData.monocle3_save_error}, with one of
+\verb{_exists}, \verb{_damaged}, \verb{_not_owned}, \verb{_ambiguous_ownership}, \verb{_conflict},
+\verb{_placeholder_not_recognized}, \verb{_external_assay}, \verb{_unsafe_backing} or
+\verb{_manifest_error}. A bad \code{package_dir} gives
+\code{projectData.monocle3_package_dir_error}. See \code{\link[=save_monocle_cds]{save_monocle_cds()}} and
+\code{\link[=write_monocle_manifest]{write_monocle_manifest()}}.
+}
+
 \seealso{
 Useful links:
 \itemize{

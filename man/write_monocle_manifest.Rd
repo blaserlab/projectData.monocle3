@@ -58,11 +58,14 @@ Every CDS needs a matching \verb{data/<name>.rda} placeholder, so that the
 object is discoverable with \code{\link[utils:data]{utils::data()}} and can be documented in the
 usual way. The file is inspected without running anything: its serialized
 header is parsed to read the object name and, for a small character vector,
-its content. Currently the historical string \code{"This is a placeholder object."} is recognized. A CDS without a placeholder is skipped with a
+its content. The historical string \code{"This is a placeholder object."} is
+recognized, and so is the classed placeholder that \code{\link[=save_monocle_cds]{save_monocle_cds()}} writes
+(class \code{projectData_monocle3_placeholder}, whose \code{object_name} and \code{package}
+attributes must match). A CDS without a placeholder is skipped with a
 warning (and, if it already had a manifest entry, that entry is removed as
 stale). A \code{.rda} that holds a real dataset, or that cannot be inspected, is
 never treated as a placeholder, and no registration is created for it.
-Placeholder files are never created or modified.
+This function never creates or modifies placeholder files.
 }
 
 \section{Reconciliation}{
@@ -127,6 +130,16 @@ a manifest without resources carries no information.
 Discovery reads only \code{file_index.rds}, directory listings and the header of
 each placeholder. No CDS is restored, no BPCells matrix is opened and no
 working directory is created. \code{monocle3} and \code{BPCells} need not be installed.
+}
+
+\section{Conditions}{
+
+A manifest that cannot be read or validated, or an invalid entry of another
+adapter, stops the call with an error of class
+\code{projectData.monocle3_manifest_error} and leaves the manifest untouched. A bad
+\code{package_dir} gives \code{projectData.monocle3_package_dir_error}. Skipped
+resources and conflicts raise warnings of class \code{projectData.monocle3_skipped}
+and \code{projectData.monocle3_conflict}.
 }
 
 \examples{

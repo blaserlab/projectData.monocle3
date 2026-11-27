@@ -39,7 +39,7 @@
 #' The UMAP nearest-neighbour index, however, is memory-mapped by Annoy
 #' directly from the installed file. On Linux and macOS the mapping survives
 #' deletion of the file; on Windows an installed copy cannot be removed while
-#' it is mapped. See the README for details.
+#' it is mapped. See `vignette("storage")` for details.
 #'
 #' @return A `projectData_loader` object.
 #' @seealso [projectData::data_loader()], [projectData::data_loader_adapter()]

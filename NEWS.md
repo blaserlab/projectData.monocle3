@@ -1,9 +1,70 @@
+# projectData.monocle3 0.1.0
+
+Initial public release. The changes below summarize the development versions
+0.0.0.9001 to 0.0.0.9013, whose entries are kept further down for reference.
+
+## Loader
+
+* `projectData_loaders()` declares the loader `projectData.monocle3::cds`, which
+  projectData uses (without attaching this package) to restore a saved
+  Monocle 3 `cell_data_set` whose counts are a BPCells on-disk matrix. Registration
+  and validation need neither monocle3 nor BPCells and read no matrix data; opening
+  needs both and fails with a message naming the missing package.
+* First access only: the installed directory is validated, then restored with
+  `monocle3::load_monocle_objects()`. Monocle copies the BPCells matrix (and its
+  row-ordered `counts_row_order` copy) into the working directory allocated by
+  projectData. The installed package is treated as immutable, `setwd()` is never
+  called, and nothing is deleted on `data_detach()`: a retained CDS keeps working.
+* Symbolic links and malformed BPCells directories inside a resource are refused.
+
+## Authoring
+
+* `save_monocle_cds()` saves a CDS with Monocle's native persistence into a data
+  package source tree, writes the mandatory `.rda` placeholder and registers the
+  resource in `inst/projectData/manifest.dcf`. In-memory sparse counts are
+  converted to BPCells automatically, on a copy; BPCells counts are saved as they
+  are. In-memory alternative assays, alternative experiments, metadata and
+  reductions are retained. Saving is staged, validated with the loader's own
+  checks and rolled back on failure.
+* Everything unsupported is refused before anything is written: dense,
+  `DelayedArray` or HDF5-backed counts, and secondary assays stored on disk
+  (`projectData.monocle3_external_assay`).
+* `overwrite = TRUE` replaces only a resource this package can show it wrote
+  (two of: native index, manifest entry, recognized placeholder); other files,
+  other loaders' entries and ambiguous states are refused.
+* `write_monocle_manifest()` reconciles the manifest with the saved directories
+  and placeholders: it adds, updates and removes stale entries owned by this
+  adapter, preserves other adapters' entries, never deletes files, and is
+  idempotent.
+
+## Documentation and tests
+
+* Three vignettes: `authoring-monocle3-data`, `using-monocle3-data` and `storage`
+  (storage, reconstruction and lifecycle), runnable on a small synthetic CDS
+  (`inst/examples/demo-package.R`). The README and the help pages state the
+  supported representations, condition classes and limitations.
+* A self-contained end-to-end suite authors, builds, installs and loads generated
+  data packages (including fresh processes and damaged installations), plus
+  historical-compatibility tests against fixtures written by earlier versions.
+* GitHub Actions runs the strict suite and `R CMD check --as-cran` on Ubuntu
+  (R release and 4.5), macOS and Windows, with projectData 0.1.0, monocle3 1.4.27
+  and BPCells 0.3.1.
+
+## Known limitations
+
+* One CDS per resource; no persistent cache; HDF5 and `DelayedArray` storage are
+  not supported; the UMAP Annoy index is read from the installed file.
+* Saving is not a filesystem transaction; a killed R process can leave a hidden
+  `.projectData.monocle3-stage-*` directory.
+* `projectData (>= 0.0.0.9008)` is required (0.1.0 from CRAN is the tested release).
+* monocle3 and BPCells are installed from GitHub (`Suggests` and `Remotes`).
+
 # projectData.monocle3 0.0.0.9013
 
 Cross-platform CI and dependency compatibility. No change to production code,
 the public API, the serialization format or the loader contract.
 
-* **CI:** `.github/workflows/R-CMD-check.yaml` runs the strict self-contained
+* **CI** (superseded: the workflows have since run, see 0.1.0): `.github/workflows/R-CMD-check.yaml` runs the strict self-contained
   integration suite (`PDM3_INTEGRATION_TESTS=true`) and `R CMD check --as-cran`
   on Ubuntu, Windows and macOS (R release) and Ubuntu with R 4.5, with
   `projectData` from CRAN and monocle3 and BPCells from GitHub at pinned tags

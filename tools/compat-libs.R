@@ -32,7 +32,7 @@ libs <- list(
   projectdata_cran = list(
     list(pkg = "projectData", url = cran_source("projectData", "0.1.0"))
   ),
-  # The development version of the Issue 3 validation (declared minimum is 0.0.0.9005).
+  # The development version of the Issue 3 validation (the declared minimum is 0.0.0.9008).
   projectdata_9008 = list(
     list(pkg = "projectData", url = github_ref("blaserlab/projectData", "31ff41524e8f6602751d2e60cd05e73479fc2ebc"))
   ),

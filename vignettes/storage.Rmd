@@ -1,0 +1,234 @@
+---
+title: "Monocle 3 storage, reconstruction and lifecycle"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Monocle 3 storage, reconstruction and lifecycle}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+have_stack <- all(vapply(
+  c("projectData", "monocle3", "BPCells", "SingleCellExperiment",
+    "SummarizedExperiment", "Matrix"),
+  requireNamespace, logical(1), quietly = TRUE
+))
+knitr::opts_chunk$set(eval = have_stack)
+```
+
+This vignette explains what `projectData.monocle3` stores, what it does when a
+CDS is loaded, and how long the restored files live. The task-oriented guides are
+`vignette("authoring-monocle3-data", package = "projectData.monocle3")` and
+`vignette("using-monocle3-data", package = "projectData.monocle3")`.
+
+## What is stored
+
+`save_monocle_cds()` stores a CDS with Monocle's own persistence API,
+`monocle3::save_monocle_objects()`, with no tar archive. The package does not
+implement a serializer of its own. In the data package, the directory
+`inst/extdata/<name>/` holds
+
+* `file_index.rds`, Monocle's index of what was saved;
+* `cds_object.rds`, the CDS without its counts matrix (metadata, reductions,
+  models, in-memory assays and alternative experiments);
+* `bpcells_matrix_dir/`, the BPCells directory that holds the counts.
+
+| Representation | Handling |
+|---|---|
+| `counts` as a BPCells directory matrix (`MatrixDir`), including a lazily subset one | Saved as it is, through native Monocle saving |
+| `counts` as `dgCMatrix` / `dgTMatrix`, or a BPCells in-memory matrix | Converted to a BPCells directory automatically, on a **copy**; your CDS is not modified |
+| Other in-memory assays (`logcounts`, `spliced`, ...) | Retained, stored inside `cds_object.rds` |
+| In-memory alternative experiments (`altExp()`, for example ADT or CRISPR), at any depth | Retained |
+| Cell and gene metadata, reductions, `metadata()` | Retained |
+| A secondary assay (main CDS or any alternative experiment) that is stored on disk: BPCells, HDF5 or `DelayedArray` | **Refused** before anything is written (`projectData.monocle3_external_assay`) |
+| `counts` as a dense matrix, `DelayedMatrix`, HDF5-backed BPCells, or missing | **Refused** before anything is written |
+| A CDS saved with `hdf5_assays = TRUE`, a tar archive, or with in-memory counts | **Rejected** by the loader at validation |
+| More than one CDS per resource | Not supported |
+
+Alternative in-memory assays and alternative experiments were tested with
+synthetic data; other `SingleCellExperiment` extensions are not assumed to be
+supported. Unsupported storage is refused, never silently converted or left
+pointing at files that your users do not have. The adapter never converts a
+secondary assay for you, because that could need a lot of memory.
+
+### Why independently disk-backed assays are refused
+
+Monocle saves a BPCells assay other than the managed `counts` only as a
+*reference* to the directory it was created in. The package would install, and
+the reference would dangle on every other machine. Convert such assays to
+in-memory matrices, or drop them.
+
+## Restoring a CDS
+
+Restoration happens on first access, in two stages. The core (projectData)
+controls when, how often and where; the adapter controls how.
+
+1. **Validation** (adapter, `validate`) inspects the installed directory without
+   building the CDS or reading matrix values. It reads `file_index.rds`, requires
+   exactly one rds-format CDS and one BPCells matrix directory, rejects absolute
+   or `..` paths and symbolic links, and checks that every listed file and every
+   file BPCells writes is present. It runs before every uncached opening.
+2. **Opening** (adapter, `open`) calls `monocle3::load_monocle_objects()` on the
+   installed directory, with the BPCells location set to the working directory
+   that projectData allocated for this opening, and checks that the result is a
+   `cell_data_set`.
+
+A demonstration:
+
+```{r demo, message = FALSE}
+library(monocle3)
+library(projectData)
+source(system.file("examples", "demo-package.R", package = "projectData.monocle3"))
+
+work <- file.path(tempdir(), "storage-demo")
+dir.create(work)
+lib <- file.path(work, "library")
+dir.create(lib)
+invisible(demo_data_package(work, lib, name = "demoMonocleData"))
+data_config(messages = FALSE)
+
+installed <- file.path(lib, "demoMonocleData", "extdata", "demo_cds")
+before <- tools::md5sum(list.files(installed, recursive = TRUE, full.names = TRUE))
+wd <- getwd()
+
+cds <- data_get("demo_cds", package = "demoMonocleData", lib.loc = lib)
+```
+
+### Where the files go
+
+Native Monocle loading does **not** use the installed BPCells directory in
+place: it copies it. Monocle requires the target directory to exist and creates
+uniquely named `monocle.bpcells.<date>.<id>.tmp` directories in it, so the adapter
+passes the allocated working directory directly. Two copies are made: the counts
+and a second, row-ordered copy that Monocle keeps in the `counts_row_order`
+assay (the BPCells layout differs between them).
+
+```{r workdir}
+work_root <- file.path(tempdir(), "projectData-work")
+copies <- list.files(work_root, pattern = "tmp$", recursive = TRUE,
+                     include.dirs = TRUE, full.names = TRUE)
+basename(copies)
+SummarizedExperiment::assayNames(cds)
+```
+
+The working directory is unique to this opening, under the session temporary
+directory (`file.path(tempdir(), "projectData-work")`; projectData encodes the
+collection and resource names in the directory names). The counts really are read
+from the copy rather than from the installed package:
+
+```{r backing}
+count_dir <- BPCells::all_matrix_inputs(SummarizedExperiment::assay(cds, "counts"))[[1]]@dir
+startsWith(normalizePath(count_dir), normalizePath(work_root))
+```
+
+and the installed resource was not touched, nor was your working directory:
+
+```{r untouched}
+identical(before, tools::md5sum(list.files(installed, recursive = TRUE, full.names = TRUE)))
+identical(wd, getwd())
+```
+
+The adapter never calls `setwd()`, never writes to the installed package (which
+is treated as read-only and immutable, and may really be on a read-only file
+system), and refuses a working directory that lies inside the installed
+resource. Because both matrices are restored there, the installed package is not
+needed for the counts once the object is open. One thing is not copied: if the
+CDS has a UMAP model, its Annoy nearest-neighbour index is memory-mapped by
+Monocle from the installed file. On Linux that keeps working if the package is
+removed while the object is in use, since an unlinked file stays mapped; that is
+platform behavior, not a guarantee. Do not reinstall or remove a data package
+while a CDS from it is in use, and note that Windows cannot remove a mapped file.
+(The model also records the original install path as informational metadata;
+nothing reads it.)
+
+### Disk-backed does not mean free
+
+"Disk-backed" means the matrix data can stay on disk. It does not mean RAM-free
+or free of temporary disk costs:
+
+* The cell and gene metadata, reductions, models, and every other assay are
+  ordinary R objects in memory.
+* Computations that collect the counts (for example converting to a
+  `dgCMatrix`) read them into memory.
+* Every opening makes **two copies** of the matrix in the session temporary
+  directory, in addition to the installed one. Attach, detach and attach again
+  makes another pair; nothing is shared between openings. There is no persistent
+  cache in this version, so every new session copies again on first access.
+
+```{r size}
+sum(file.size(list.files(copies, recursive = TRUE, full.names = TRUE)))
+sum(file.size(list.files(file.path(installed, "bpcells_matrix_dir"), full.names = TRUE)))
+```
+
+(The first is the working copies, the second one installed copy; for realistic
+datasets expect about twice the installed matrix per opening.)
+
+## Lifetime and detachment
+
+* Monocle removes the restored directories when R exits, through its own exit
+  hook. The adapter does not delete anything: not on `data_detach()`, not when
+  objects are removed, not with `on.exit()`, because a retained CDS may still
+  reference them.
+* `data_detach()` forgets the collection and cached objects. A CDS you kept in a
+  variable keeps working:
+
+```{r detach}
+data_detach()
+dim(cds)
+sum(colSums(SummarizedExperiment::assay(cds, "counts")))
+file.exists(count_dir)
+```
+
+* Saving a CDS that has a UMAP model writes a small copy of the Annoy index to the
+  session temporary directory so that the staged files can be moved and deleted
+  on Windows; it is not deleted, because the index may be in use.
+* Failures are cached by projectData, which keeps a failed resource failed until
+  `data_retry()`; see the troubleshooting section of
+  `vignette("using-monocle3-data", package = "projectData.monocle3")`.
+
+## Symbolic links and containment
+
+monocle3 and BPCells follow symbolic links when they copy a matrix directory and
+do not check where a link leads, so this package refuses them instead: nothing
+inside a saved Monocle directory, or inside the BPCells counts directory being
+saved, may be a symbolic link, and the BPCells directory must be flat with the
+files BPCells writes. The library, the package directory and parents such as
+`inst/extdata` may themselves be links. Resources written by `save_monocle_cds()`
+never contain links. Base R cannot tell a FIFO or device file from a regular file,
+so those are not detected.
+
+## Contrast with projectData.Seurat
+
+Both adapters use the same projectData contract, but their persistence mechanisms
+differ, and the experience is not identical:
+
+| | projectData.monocle3 | projectData.Seurat |
+|---|---|---|
+| Persistence | Monocle's native `save_monocle_objects()` / `load_monocle_objects()` | The adapter's own inventory and copy of each BPCells directory, plus `object.rds` |
+| On first access | Rebuilds the CDS and **copies** the BPCells matrix twice into the working directory | Points the layers at the installed directories; **copies nothing** |
+| Needs the installed package afterwards | Only for the UMAP index | Yes, for all layers |
+| Conversion at save time | In-memory `counts` converted automatically | None: the object must already use BPCells directories |
+| Storage diagnostics | None exported | `seurat_storage_report()` |
+
+## Limitations
+
+* Exactly one CDS per resource; the resource name is the object name.
+* No persistent cache, no external file lifecycle manager, no explicit deletion.
+* Saves must come from `save_monocle_cds()` (or an equivalent native save with
+  `archive_type = "none"`, BPCells directory counts and no HDF5).
+* `Iterable_dgCMatrix_wrapper` assays and `DelayedArray` assays are refused
+  conservatively, without checking whether they would serialize self-contained.
+* Saving is staged and rolled back on failure, but it is not a filesystem
+  transaction: a killed R process can leave a hidden
+  `.projectData.monocle3-stage-*` directory.
+* The adapter relies on `BPCells::all_matrix_inputs()`, which BPCells documents as
+  experimental. The assumptions about monocle3 and BPCells (the layout written by
+  `save_monocle_objects()`, the BPCells directory files, the `matrix_control`
+  interface) are stated by the package's `test-e2e-dependency-contract.R`, so an
+  upgrade that changes one fails there by name.
+
+```{r cleanup, include = FALSE}
+try(data_detach(), silent = TRUE)
+unlink(work, recursive = TRUE)
+```

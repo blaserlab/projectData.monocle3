@@ -186,6 +186,16 @@
 #' the placeholder, which prints instructions. The actual CDS is obtained with
 #' `projectData::data_attach("<pkg>")` followed by `<name>`.
 #'
+#' @section Conditions:
+#' Errors raised before anything is written have class
+#' `projectData.monocle3_save_error` plus one of `_exists` (needs `overwrite =
+#' TRUE`; also `_damaged` when the existing resource is damaged), `_not_owned`,
+#' `_ambiguous_ownership`, `_conflict`, `_placeholder_not_recognized`,
+#' `_external_assay`, `_unsafe_backing` or `_manifest_error`. A `package_dir` that
+#' is not a package source directory gives
+#' `projectData.monocle3_package_dir_error`. If the commit fails, the previous
+#' files are restored and the error says so.
+#'
 #' @param cds A Monocle 3 `cell_data_set`.
 #' @param name A single, syntactically valid R object name. It names the saved
 #'   directory, the placeholder, the manifest resource and the object that
@@ -206,7 +216,7 @@
 #' cds_main_adults
 #' }
 #' @seealso [write_monocle_manifest()] to register directories saved by other
-#'   means, [projectData_loaders()]
+#'   means, [projectData_loaders()]; `vignette("authoring-monocle3-data")`
 #' @export
 save_monocle_cds <- function(cds, name, package_dir = ".", overwrite = FALSE) {
   call <- sys.call()
