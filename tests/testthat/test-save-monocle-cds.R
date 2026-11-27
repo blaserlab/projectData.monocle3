@@ -535,3 +535,54 @@ test_that("a failed commit leaves stale manifest entries and files exactly as th
   expect_identical(file_state(pkg), before)
   expect_identical(manifest_resources(pkg), "stale")
 })
+
+# Annoy's save() memory-maps the file it writes; a mapped file cannot be
+# renamed or deleted on Windows, so the staged index must be released.
+mapped_files <- function(pattern) {
+  maps <- "/proc/self/maps"
+  if (!file.exists(maps)) {
+    return(NULL)
+  }
+  grep(pattern, readLines(maps), fixed = TRUE, value = TRUE)
+}
+
+test_that("a staged UMAP index is released after saving and can be deleted", {
+  skip_if_no_monocle()
+  cds <- fixture_memory_cds()
+  stage <- withr::local_tempdir(pattern = "pdm3-stage-")
+  saved <- file.path(stage, "ds")
+
+  expect_no_warning(save_staged_cds(cds, saved))
+  idx <- list.files(saved, pattern = "umap_transform_model_umap\\.idx$", full.names = TRUE)
+  expect_length(idx, 1L)
+
+  maps <- mapped_files(basename(stage))
+  if (!is.null(maps)) expect_length(maps, 0L)
+  expect_true(all(file.remove(idx)))
+  expect_false(file.exists(idx))
+  expect_equal(remove_tree(stage), TRUE)
+
+  # The CDS the caller keeps still answers queries from its index.
+  ann <- find_annoy_indexes(cds@reduce_dim_aux)
+  expect_gte(length(ann), 1L)
+  expect_length(ann[[1]]$getNNsByItem(0L, 3L), 3L)
+})
+
+test_that("save_monocle_cds() leaves no index mapped inside the package source", {
+  skip_if_no_monocle()
+  pkg <- new_save_pkg()
+  cds <- fixture_memory_cds()
+  save_quiet(cds, "ds", pkg)
+  expect_length(stage_dirs(pkg), 0L)
+  maps <- mapped_files(basename(pkg))
+  if (!is.null(maps)) expect_length(maps, 0L)
+})
+
+test_that("remap_annoy_indexes() warns, and does not fail, for an unusable index", {
+  skip_if_no_monocle()
+  cds <- fixture_memory_cds()
+  expect_warning(
+    expect_identical(remap_annoy_indexes(cds, dir = file.path(tempdir(), "does-not-exist")), 0L),
+    class = "projectData.monocle3_annoy_remap"
+  )
+})

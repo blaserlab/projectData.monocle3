@@ -585,6 +585,9 @@ counts_representation <- function(cds) {
 
 # Separate function so that tests can make the save step fail.
 save_staged_cds <- function(cds, directory) {
+  # Annoy's save() re-maps the index it just wrote, so even a failed save can
+  # leave the staged file mapped (see remap_annoy_indexes()).
+  on.exit(remap_annoy_indexes(cds), add = TRUE)
   with_attached("monocle3", {
     suppressMessages(utils::capture.output(
       monocle3::save_monocle_objects(
@@ -594,6 +597,53 @@ save_staged_cds <- function(cds, directory) {
     ))
   })
   invisible(directory)
+}
+
+# Annoy indexes (UMAP model and search indexes) found in a CDS's
+# reduce_dim_aux. They are Rcpp reference objects, shared with every copy of
+# the CDS.
+find_annoy_indexes <- function(x) {
+  if (any(grepl("^Rcpp_Annoy", class(x)))) {
+    return(list(x))
+  }
+  if (is.list(x) || methods::is(x, "SimpleList")) {
+    return(unlist(lapply(as.list(x), find_annoy_indexes), recursive = FALSE))
+  }
+  list()
+}
+
+# monocle3 writes Annoy indexes with `ann$save(file)`, and Annoy's save()
+# writes the file and then memory-maps it again. After saving into the staging
+# directory the live index (shared with the caller's CDS) therefore stays mapped
+# to a staged file that is about to be moved and deleted. Windows can neither
+# rename nor delete a mapped file, which made the commit and the cleanup fail
+# there (Linux does not mind). Saving each index once more to a session-temp
+# file re-maps it there and releases the staged file. The temp files are not
+# deleted: the index may be in use for the rest of the session. Never fails the
+# save; returns the number of indexes re-mapped.
+remap_annoy_indexes <- function(cds, dir = tempdir()) {
+  indexes <- tryCatch(find_annoy_indexes(cds@reduce_dim_aux), error = function(e) list())
+  remapped <- 0L
+  for (ann in indexes) {
+    target <- tempfile("projectData.monocle3-annoy-", tmpdir = dir, fileext = ".idx")
+    # RcppAnnoy's save() returns nothing useful; a missing file means it failed.
+    ok <- tryCatch({
+      suppressWarnings(utils::capture.output(ann$save(target), type = "message"))
+      file.exists(target)
+    }, error = function(e) FALSE)
+    if (ok) {
+      remapped <- remapped + 1L
+    } else {
+      warning(structure(
+        class = c("projectData.monocle3_annoy_remap", "warning", "condition"),
+        list(message = paste0(
+          "projectData.monocle3: could not release an Annoy index mapped to the ",
+          "staging directory; removing it may fail on Windows."
+        ), call = NULL)
+      ))
+    }
+  }
+  invisible(remapped)
 }
 
 # Moves the staged files into the package, keeping the previous ones aside
