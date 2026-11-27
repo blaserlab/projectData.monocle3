@@ -118,6 +118,8 @@ manifest takes precedence.
 | `counts` as a dense matrix, `DelayedMatrix`, HDF5-backed BPCells | **Refused** before anything is written |
 | HDF5 or tar saves, in-memory-counts saves, several CDS in one resource | Not supported |
 
+`save_monocle_cds()` automatically converts supported in-memory sparse counts to disk-backed BPCells storage without modifying the original CDS. Existing BPCells-backed counts are preserved.
+
 Unsupported storage is refused, never silently converted or left dangling.
 `vignette("storage")` explains the details and limits.
 
