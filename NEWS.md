@@ -56,7 +56,7 @@ Initial public release. The changes below summarize the development versions
   not supported; the UMAP Annoy index is read from the installed file.
 * Saving is not a filesystem transaction; a killed R process can leave a hidden
   `.projectData.monocle3-stage-*` directory.
-* `projectData (>= 0.0.0.9008)` is required (0.1.0 from CRAN is the tested release).
+* `projectData (>= 0.1.0)` is required, the same minimum as `projectData.Seurat`. projectData 0.0.0.9008 is exercised only as a historical regression check (`tools/compat-matrix.R regression_9008`) and is not supported.
 * monocle3 and BPCells are installed from GitHub (`Suggests` and `Remotes`).
 
 # projectData.monocle3 0.0.0.9013
@@ -71,7 +71,7 @@ the public API, the serialization format or the loader contract.
   (`tools/ci-pin-remotes.R`; DESCRIPTION itself stays unpinned). A second job
   runs `R CMD check` without the Monocle stack (skips expected).
   `.github/workflows/compat-matrix.yaml` runs the suite for each configuration of
-  `tools/compat-matrix.R` (`legacy`: projectData 0.0.0.9008 with BPCells 0.3.0;
+  `tools/compat-matrix.R` (`legacy`, later renamed `regression_9008`: projectData 0.0.0.9008 with BPCells 0.3.0, historical regression only;
   `bpcells_030`), a separate Linux job with the historical fixtures from the
   pinned commit of `projectData.monocle3.testdata`, and an allowed-failure job
   against BPCells main. **No workflow has run yet:** see the README compatibility

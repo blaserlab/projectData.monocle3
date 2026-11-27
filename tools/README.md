@@ -54,7 +54,7 @@ Only the live package libraries are read, never modified. Fresh processes
 | Workflow | What it runs |
 |---|---|
 | `R-CMD-check.yaml` | Ubuntu, Windows, macOS (R release) and Ubuntu (R 4.5): `tools/verify-stack.R`, the strict suite (`tools/compat-matrix.R current`, `PDM3_INTEGRATION_TESTS=true`), then `R CMD check --as-cran`. A fifth job checks without the Monocle stack (skips expected). |
-| `compat-matrix.yaml` | Linux, weekly and on demand: the `legacy` and `bpcells_030` configurations; the historical fixtures; BPCells `main` (allowed failure). |
+| `compat-matrix.yaml` | Linux, weekly and on demand: the `regression_9008` and `bpcells_030` configurations (`regression_9008` is a historical regression check of an unsupported projectData, run on a scratch copy of the source with the projectData requirement relaxed; the supported minimum is 0.1.0); the historical fixtures; BPCells `main` (allowed failure). |
 
 CI installs `projectData` from CRAN, and `monocle3` and `BPCells` from GitHub at
 the monocle3 tag in the workflow's `MONOCLE3_REF` (written into `Remotes` of the

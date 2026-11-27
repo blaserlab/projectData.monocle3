@@ -35,7 +35,7 @@ jobs:
       matrix:
         include:
           # Libraries (tools/compat-libs.R) put in front of the default one.
-          - {config: legacy,      libs: 'projectdata_9008 bpcells_030'}
+          - {config: regression_9008, libs: 'projectdata_9008 bpcells_030'}  # historical regression, projectData 0.0.0.9008 is NOT supported
           - {config: bpcells_030, libs: 'projectdata_cran bpcells_030'}
     steps:
       - uses: actions/checkout@v4

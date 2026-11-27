@@ -2,7 +2,7 @@
 # a clean R process with its own library path, and prints what was verified.
 #
 #   Rscript tools/compat-matrix.R                     # every configuration
-#   Rscript tools/compat-matrix.R current legacy
+#   Rscript tools/compat-matrix.R current bpcells_030
 #   Rscript tools/compat-matrix.R --historical current  # also the historical fixtures
 #   Rscript tools/compat-matrix.R --list
 #
@@ -11,6 +11,12 @@
 # as NOT RUN. The suite runs with PDM3_INTEGRATION_TESTS=true (a missing
 # dependency or an unavailable self-contained test is a failure, never a skip),
 # NOT_CRAN=true, and the versions found must match the ones declared below.
+#
+# Supported configurations need projectData >= 0.1.0 (DESCRIPTION). Entries with
+# `regression = TRUE` are historical regression checks of an UNSUPPORTED
+# projectData: the suite runs on a scratch copy of the source whose DESCRIPTION
+# requirement is relaxed (pkgload refuses the real one). They are never part of
+# the default selection and VERIFIED there does not make the version supported.
 #
 # Status per configuration:
 #   FAILED               any failure or error, or a package version other than declared
@@ -38,11 +44,14 @@ configs <- list(
     libs = character(),
     expect = c(projectData = "0.1.0", monocle3 = "1.4.27", BPCells = "0.3.1")
   ),
-  # The stack of the Issue 3 report: an older BPCells and a projectData
-  # development version.
-  legacy = list(
+  # Historical regression only, NOT a supported configuration: projectData
+  # 0.0.0.9008 (the former minimum) with BPCells 0.3.0. Run on a copy of the
+  # source with the projectData requirement relaxed; the package itself is not
+  # changed.
+  regression_9008 = list(
     libs = c("tools/compat-libs/projectdata_9008", "tools/compat-libs/bpcells_030"),
-    expect = c(projectData = "0.0.0.9008", monocle3 = "1.4.27", BPCells = "0.3.0")
+    expect = c(projectData = "0.0.0.9008", monocle3 = "1.4.27", BPCells = "0.3.0"),
+    regression = TRUE
   ),
   bpcells_030 = list(
     libs = c("tools/compat-libs/projectdata_cran", "tools/compat-libs/bpcells_030"),
@@ -52,8 +61,8 @@ configs <- list(
     libs = c("tools/compat-libs/projectdata_cran", "tools/compat-libs/bpcells_031"),
     expect = c(projectData = "0.1.0", monocle3 = "1.4.27", BPCells = "0.3.1")
   ),
-  # The oldest projectData the DESCRIPTION allows would need its own entry once
-  # it can be installed from a reproducible source.
+  # The oldest supported projectData is the DESCRIPTION minimum, 0.1.0 (CRAN),
+  # which is what every supported entry above uses.
   # BPCells' main branch, whatever version it is. Early warning only.
   bpcells_main = list(
     libs = c("tools/compat-libs/projectdata_cran", "tools/compat-libs/bpcells_main"),
@@ -70,12 +79,33 @@ if ("--list" %in% args) {
 }
 historical <- "--historical" %in% args
 args <- setdiff(args, "--historical")
-selected <- if (length(args)) args else setdiff(names(configs), "bpcells_main")
+selected <- if (length(args)) args else setdiff(names(configs), c("bpcells_main", names(Filter(function(c) isTRUE(c$regression), configs))))
 unknown <- setdiff(selected, names(configs))
 if (length(unknown)) stop("unknown configuration(s): ", paste(unknown, collapse = ", "))
 
+# A scratch copy of the package source whose projectData requirement is
+# relaxed to `version`, so pkgload can load it against an older projectData.
+relaxed_source_copy <- function(version) {
+  dest <- file.path(tempfile("pdm3-regression-"), "projectData.monocle3")
+  dir.create(dest, recursive = TRUE)
+  skip <- c(".git", ".Rproj.user", ".github", "tools", "library_catalogs")
+  top <- setdiff(list.files(root, all.files = TRUE, no.. = TRUE), skip)
+  ok <- file.copy(file.path(root, top), dest, recursive = TRUE)
+  if (!all(ok)) stop("could not copy the package source to ", dest)
+  desc <- file.path(dest, "DESCRIPTION")
+  txt <- readLines(desc)
+  relaxed <- sub("projectData \\(>= [0-9.]+\\)", sprintf("projectData (>= %s)", version), txt)
+  if (identical(txt, relaxed)) stop("no projectData requirement found in DESCRIPTION")
+  writeLines(relaxed, desc)
+  dest
+}
+
 run_config <- function(name) {
   cfg <- configs[[name]]
+  test_root <- if (isTRUE(cfg$regression)) {
+    relaxed_source_copy(unname(cfg$expect[["projectData"]]))
+  } else root
+  if (isTRUE(cfg$regression)) on.exit(unlink(dirname(test_root), recursive = TRUE), add = TRUE)
   libs <- if (length(cfg$libs)) file.path(root, cfg$libs) else character()
   absent <- libs[!dir.exists(libs)]
   if (length(absent)) {
@@ -118,7 +148,7 @@ run_config <- function(name) {
         })
       )
     },
-    args = list(root), libpath = c(libs, .libPaths()), env = env,
+    args = list(test_root), libpath = c(libs, .libPaths()), env = env,
     show = FALSE, spinner = FALSE
   )
   found <- res$versions[names(cfg$expect)]
@@ -135,7 +165,8 @@ run_config <- function(name) {
   } else {
     "VERIFIED"
   }
-  c(list(name = name, status = status, wrong_versions = wrong, historical = historical), res)
+  c(list(name = name, status = status, wrong_versions = wrong, historical = historical,
+         regression = isTRUE(cfg$regression)), res)
 }
 
 results <- lapply(selected, function(n) {
@@ -145,6 +176,7 @@ results <- lapply(selected, function(n) {
 
 report <- unlist(lapply(results, function(r) {
   head <- sprintf("%s: %s%s", r$name, r$status, if (isTRUE(r$historical)) " (+ historical fixtures)" else "")
+  if (isTRUE(r$regression)) head <- paste(head, "[regression only: projectData version NOT supported]")
   if (is.null(r$versions)) return(c(head, paste0("   ", r$note)))
   v <- r$versions
   c(

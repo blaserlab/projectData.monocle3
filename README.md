@@ -200,7 +200,7 @@ checks that the package installs, builds and checks with skips only.
 |---|---|---|---|---|---|
 | 0.1.0 (CRAN) | 1.4.27 | 0.3.1 | 4.5.2 / 3.22 | Linux (Ubuntu 22.04) | Verified: 235 tests, 2,548 expectations, 0 failures, 0 skips, including the historical fixtures |
 | 0.1.0 (CRAN) | 1.4.27 | 0.3.0 | 4.5.2 / 3.22 | Linux | Verified: same, with the historical fixtures |
-| 0.0.0.9008 (GitHub) | 1.4.27 | 0.3.0 | 4.5.2 / 3.22 | Linux | Verified: same, with the historical fixtures (the declared minimum) |
+| 0.0.0.9008 (GitHub) | 1.4.27 | 0.3.0 | 4.5.2 / 3.22 | Linux | Unsupported (below the declared minimum `projectData >= 0.1.0`); historical regression check only (`regression_9008`), see `tools/README.md` |
 | other 1.4.x | | 0.3.x | other R | any | Expected |
 | any | any | BPCells main | any | Linux | Expected: allowed-failure CI job, never run (`all_matrix_inputs()` is experimental upstream) |
 | any | any | counts or secondary assays in HDF5, `DelayedArray` or BPCells storage; tar archives | any | any | Unsupported (refused, or rejected on load) |

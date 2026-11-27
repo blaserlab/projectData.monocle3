@@ -16,7 +16,7 @@ License: MIT + file LICENSE
 URL: https://github.com/blaserlab/projectData.monocle3
 BugReports: https://github.com/blaserlab/projectData.monocle3/issues
 Depends: R (>= 4.1.0)
-Imports: methods, projectData (>= 0.0.0.9008), stats, utils
+Imports: methods, projectData (>= 0.1.0), stats, utils
 Suggests: BPCells, DelayedArray, knitr, Matrix, monocle3, pkgload, rmarkdown, S4Vectors,
     SingleCellExperiment, SummarizedExperiment, testthat (>= 3.2.0), withr (>= 2.5.0)
 Remotes: github::bnprks/BPCells/r, github::cole-trapnell-lab/monocle3

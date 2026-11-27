@@ -16,8 +16,7 @@ pak::pak(c(
 ))
 ```
 
-Hard dependency: `projectData (>= 0.0.0.9008)` (0.1.0 from CRAN is the tested
-release). `monocle3` and `BPCells` are `Suggests` + `Remotes`: needed to author and
+Hard dependency: `projectData (>= 0.1.0)` (CRAN; same as `projectData.Seurat`). `monocle3` and `BPCells` are `Suggests` + `Remotes`: needed to author and
 to open a CDS, not to install, register or validate.
 
 ## Draft GitHub release notes
@@ -72,7 +71,7 @@ experimental upstream.
 |---|---|
 | Ubuntu 26.04, R 4.6.2 / Bioc 3.24; R 4.5.3 / Bioc 3.22; macOS 26 arm64; Windows Server 2022 (R 4.6.2) with projectData 0.1.0, monocle3 1.4.27, BPCells 0.3.1 | GitHub Actions run 46025240109 at `d3f2683`: strict suite VERIFIED, `R CMD check --as-cran` Status OK on all four |
 | Ubuntu 22.04, R 4.5.2, projectData 0.1.0, monocle3 1.4.27, BPCells 0.3.1 | Local `tools/compat-matrix.R --historical`: 240 tests, 2,570 expectations, 0 failures, 0 skips (2026-11-27, at the release-preparation working tree) |
-| Same, BPCells 0.3.0; projectData 0.0.0.9008 (the declared minimum) | Local, earlier commit (`85b68c7` plus uncommitted changes): 235 tests, 0 failures, 0 skips |
+| Same, BPCells 0.3.0; projectData 0.0.0.9008 (historical regression only, unsupported) | Local, earlier commit (`85b68c7` plus uncommitted changes): 235 tests, 0 failures, 0 skips |
 | BPCells `main`; historical-fixture and legacy jobs on GitHub | Never run on GitHub (`compat-matrix.yaml` has no run) |
 
 ## R-universe
@@ -110,7 +109,7 @@ Status: **Expected to work for the adapter alone; not ready for the Monocle stac
 Proposed commit line for `R/regenerated_git_commands.R`:
 
 ```r
-gert::git_commit("Prepare 0.1.0: vignettes, README, NEWS, docs, minimum projectData 0.0.0.9008")
+gert::git_commit("Prepare 0.1.0: vignettes, README, NEWS, docs, minimum projectData 0.1.0")
 ```
 
 ## Outstanding manual steps
@@ -119,9 +118,8 @@ gert::git_commit("Prepare 0.1.0: vignettes, README, NEWS, docs, minimum projectD
 * Universe `packages.json` change and verification of a hosted build.
 * Rerunning CI on the release commit (the CI evidence above is for `d3f2683`,
   which predates the documentation changes and the version bump).
-* Decide whether to require `projectData (>= 0.1.0)` (Seurat does). Kept at
-  `0.0.0.9008` here because raising it would also retire the `legacy` configuration
-  in `tools/compat-matrix.R` and the compat workflow.
+* Done: `projectData (>= 0.1.0)` is required (as Seurat); the former `legacy`
+  configuration is now the unsupported historical regression `regression_9008`.
 * `pak::pak()` of the BPCells GitHub subdirectory failed locally with "Failed to
   uncompress BPCells" (this machine; reproduced three times, also with an internal
   `untar`). It works on the GitHub runners of all four platforms. Cause not found.
