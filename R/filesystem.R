@@ -159,9 +159,14 @@ remove_tree <- function(path, within = NULL) {
 
 # The only renaming primitive of the commit, so that tests can inject failures.
 # Returns TRUE or FALSE; on failure the reason R reported (the operating system's
-# message) is in attr(, "reason"). On Windows a directory cannot be renamed while
-# any file in it is open, and BPCells keeps files open until the R object that
-# holds them is garbage collected, so a failed move is retried after gc().
+# message) is in attr(, "reason"). On Windows renaming a directory fails with
+# "Access is denied" (observed in CI) while the staged BPCells files are still
+# open somewhere in the session, and gc() did not release them. After a rename
+# fails there, a directory is moved by copying it and then removing the source:
+# a copy only needs read access, and nothing is lost if it fails (`to` is
+# removed again, `from` is untouched). If the source cannot be removed afterwards
+# it is left behind (it is a staging or backup path that is cleaned up later) and
+# the move still counts as done.
 move_path <- function(from, to) {
   reason <- character()
   attempt <- function() {
@@ -174,14 +179,29 @@ move_path <- function(from, to) {
     )
   }
   ok <- attempt()
-  if (!ok && .Platform$OS.type == "windows") {
-    for (i in 1:3) {
-      gc()
-      Sys.sleep(0.2)
-      if (ok <- attempt()) break
-    }
+  if (!ok && .Platform$OS.type == "windows" && dir.exists(from) && !file.exists(to)) {
+    ok <- copy_then_remove(from, to)
+    if (!ok) reason <- c(reason, "copy fallback failed as well")
   }
   structure(ok, reason = if (!ok) reason)
+}
+
+# Copies the directory `from` to the new path `to`, then removes `from` (best
+# effort). Links are never followed (the trees moved here were checked to hold
+# none). On any failure `to` is removed and FALSE returned.
+copy_then_remove <- function(from, to) {
+  made <- isTRUE(suppressWarnings(dir.create(to)))
+  copied <- made && all(suppressWarnings(file.copy(
+    list.files(from, all.files = TRUE, no.. = TRUE, full.names = TRUE), to,
+    recursive = TRUE, copy.mode = TRUE
+  )))
+  if (!copied) {
+    if (made) unlink(to, recursive = TRUE)
+    return(FALSE)
+  }
+  gc()
+  suppressWarnings(unlink(from, recursive = TRUE))
+  TRUE
 }
 
 # Creates `path` as a new directory that did not exist (dir.create() never

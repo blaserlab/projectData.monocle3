@@ -20,6 +20,9 @@ the public API, the serialization format or the loader contract.
   systems, so a valid placeholder was rejected as ambiguous on macOS and
   Windows: a production fix); `move_path()` reports the operating system's
   reason and retries after `gc()` on Windows (unconfirmed, see AGENTS.md).
+* On Windows a staged directory cannot be renamed into place ("Access is denied",
+  cause not established); `move_path()` falls back to copying and then removing
+  the source there. Unverified on Windows until a CI run passes.
 * **Tools:** `tools/compat-matrix.R` (strict run per configuration; a declared
   version mismatch, a failure or an unlabelled skip fails it), `tools/compat-libs.R`
   (builds the alternative libraries), `tools/verify-stack.R`,

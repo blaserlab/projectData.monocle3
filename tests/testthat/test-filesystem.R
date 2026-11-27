@@ -620,6 +620,27 @@ test_that("14: when the rename into place fails the previous files come back", {
   expect_equal(dim(open_saved(pkg, "ds")), dim(fixture_bpcells_cds("human")))
 })
 
+test_that("the Windows copy fallback moves a tree exactly, and leaves the source alone on failure", {
+  base <- withr::local_tempdir()
+  from <- file.path(base, "from")
+  dir.create(file.path(from, "sub"), recursive = TRUE)
+  writeLines("a", file.path(from, "one"))
+  writeLines("b", file.path(from, "sub", "two"))
+  before <- tools::md5sum(list.files(from, recursive = TRUE, full.names = TRUE))
+
+  to <- file.path(base, "to")
+  expect_true(copy_then_remove(from, to))
+  expect_false(dir.exists(from))
+  expect_identical(unname(tools::md5sum(file.path(to, c("one", "sub/two")))), unname(before))
+
+  # An existing destination is a failure and nothing is touched.
+  dir.create(from)
+  writeLines("c", file.path(from, "x"))
+  expect_false(copy_then_remove(from, to))
+  expect_true(file.exists(file.path(from, "x")))
+  expect_true(file.exists(file.path(to, "one")))
+})
+
 test_that("14: when restoring also fails, the backup is kept and named", {
   skip_if_no_monocle()
   cds <- fixture_bpcells_cds("mouse")
